@@ -36,7 +36,7 @@ Roteiro de ensaio:
 - **Prévia de projeção com revisão de dados pessoais:** ao projetar um exemplo, o professor vê o texto como a turma verá. O detector já oculta e-mail, telefone, números longos, palavras dos apelidos das equipes e possíveis nomes; o professor clica nas palavras para ocultar ou mostrar, pode retirar a justificativa e precisa confirmar a revisão. O detector é uma sugestão e **não garante** que tudo foi encontrado (um nome no início da frase, por exemplo, pode passar).
 - **Diagonais iguais (D = d):** permitido. A tela explica que o losango vira um quadrado (caso particular), sem revelar a área; D nunca fica menor que d. Quando mais de um padrão de erro coincide com a resposta (ex.: 2 m × 2 m), o painel não rotula nenhum.
 - **Capturas de tablet (1024×768)** em `REVISAO_VISUAL/`. Para regerar: `npm run dev` e, em outro terminal, `node scripts/capturar-telas.cjs` (requer Playwright).
-- **Proposta da Etapa 2** em `docs/ETAPA2_PROPOSTA.md` (nada implementado).
+- **Proposta da Etapa 2** em `docs/ETAPA2_ARQUITETURA.md` (nada implementado). Capturas atuais em `CAPTURAS_PRE_ETAPA2/` (tablet e desktop).
 
 ## Arquitetura
 
