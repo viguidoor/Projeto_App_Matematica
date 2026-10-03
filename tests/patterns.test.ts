@@ -27,6 +27,14 @@ describe('avaliação e padrões (hipóteses pedagógicas)', () => {
       expect(p.studentFeedback).not.toMatch(/\d/);
     }
   });
+  it('diagonais iguais (quadrado): a área segue (D × d) ÷ 2 e o padrão só é rotulado se for inequívoco', () => {
+    expect(evaluateAnswer(6, 6, 18, 'm²').correct).toBe(true);
+    expect(evaluateAnswer(6, 6, 36, 'm²').patternId).toBe('produto_sem_metade');
+    expect(evaluateAnswer(6, 6, 12, 'm²').patternId).toBe('soma_diagonais');
+    // 2 × 2: produto e soma valem 4 → ambíguo, sem rótulo
+    expect(evaluateAnswer(2, 2, 4, 'm²')).toEqual({ correct: false, patternId: null });
+    expect(evaluateAnswer(4, 4, 8, 'm²').correct).toBe(true);
+  });
   it('o problema de saída 12 × 4 segue a mesma lógica', () => {
     expect(evaluateAnswer(12, 4, 24, 'm²').correct).toBe(true);
     expect(evaluateAnswer(12, 4, 48, 'm²').patternId).toBe('produto_sem_metade');

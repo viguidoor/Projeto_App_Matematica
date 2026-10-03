@@ -62,11 +62,13 @@ export function evaluateAnswer(major: number, minor: number, answer: number, uni
   if (sameNumber(answer, area)) {
     return unit === 'm²' ? { correct: true, patternId: null } : { correct: false, patternId: 'unidade_incorreta' };
   }
-  if (sameNumber(answer, major * minor)) return { correct: false, patternId: 'produto_sem_metade' };
-  if (sameNumber(answer, major + minor)) return { correct: false, patternId: 'soma_diagonais' };
-  if (sameNumber(answer, (major + minor) / 2)) return { correct: false, patternId: 'media_diagonais' };
-  if (sameNumber(answer, (major * minor) / 4)) return { correct: false, patternId: 'quarto_do_produto' };
-  return { correct: false, patternId: null };
+  // Se mais de um padrão coincide (ocorre com medidas pequenas ou iguais), não rotula: evita afirmar demais.
+  const matches: PatternId[] = [];
+  if (sameNumber(answer, major * minor)) matches.push('produto_sem_metade');
+  if (sameNumber(answer, major + minor)) matches.push('soma_diagonais');
+  if (sameNumber(answer, (major + minor) / 2)) matches.push('media_diagonais');
+  if (sameNumber(answer, (major * minor) / 4)) matches.push('quarto_do_produto');
+  return { correct: false, patternId: matches.length === 1 ? matches[0] : null };
 }
 
 export type FieldErrors = Partial<Record<keyof SubmissionInput, string>>;

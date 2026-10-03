@@ -98,6 +98,7 @@ export interface AnonymousExample {
   minor: number;
   calculation: string;
   answerText: string;
+  /** Texto já revisado pelo professor; vazio se a justificativa foi totalmente ocultada. */
   justification: string;
   correct: boolean;
 }

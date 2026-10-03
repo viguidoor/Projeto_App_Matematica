@@ -59,3 +59,14 @@ export const NARRATIVE =
 
 export const GARDEN_CONTEXT =
   'O jardim da escola será refeito em forma de losango. Ajustem as diagonais, investiguem e depois proponham a área.';
+
+/** Aparece quando D = d: o losango é um quadrado (caso particular), sem revelar a área. */
+export const SQUARE_NOTE = {
+  title: 'Diagonais iguais: o losango virou um quadrado',
+  text:
+    'Quando as duas diagonais têm a mesma medida, o losango é um quadrado: um caso particular de losango (todo quadrado é losango, mas nem todo losango é quadrado). ' +
+    'Aqui o retângulo que envolve a figura também é um quadrado. Verifiquem se o raciocínio da equipe continua valendo nesse caso.',
+};
+
+export const DIAGONAL_RULE_HELP =
+  'A diagonal maior (D) nunca fica menor que a menor (d). Se D e d forem iguais, o losango é um quadrado.';

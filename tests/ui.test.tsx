@@ -66,6 +66,69 @@ describe('acessibilidade básica', () => {
   });
 });
 
+describe('diagonais iguais (quadrado)', () => {
+  async function toExplore() {
+    const { repo } = makeRepo();
+    const { code } = await repo.openSession();
+    const user = userEvent.setup();
+    const view = render(wrap(repo, <StudentApp />));
+    await enter(user, code);
+    await fillForm(user, { calc: '8 x 5 : 2', answer: '20', unit: 'm²', why: 'Metade do produto.' });
+    await submit(user, /Enviar diagnóstico/);
+    await screen.findByRole('heading', { name: /Missão 1/ });
+    return { user, repo, view };
+  }
+
+  it('permite D = d, explica que o losango vira quadrado e não revela a área', async () => {
+    const { user, view } = await toExplore();
+    expect(screen.queryByText(/Diagonais iguais/)).not.toBeInTheDocument();
+    expect(screen.getByText(/nunca fica menor que a menor/)).toBeInTheDocument();
+
+    const minor = screen.getByLabelText('Diagonal menor (d)');
+    await user.clear(minor);
+    await user.type(minor, '10'); // d = D = 10
+    const note = await screen.findByRole('complementary', { name: /Diagonais iguais/ });
+    expect(note).toHaveTextContent(/caso particular de losango/);
+    expect(note).toHaveTextContent(/retângulo.*também é um quadrado/);
+    expect(screen.getByRole('img', { name: /Jardim/ })).toHaveAccessibleDescription(/o losango é um quadrado/);
+    expect(view.container.textContent).not.toMatch(/50\s*m²/);
+    expect(await axe(view.container)).toHaveNoViolations();
+
+    // D não pode ficar abaixo de d
+    expect(screen.getByRole('button', { name: /Diminuir diagonal maior/ })).toBeDisabled();
+    const major = screen.getByLabelText('Diagonal maior (D)');
+    await user.clear(major);
+    await user.type(major, '9');
+    expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toMatch(/entre 10 m e 20 m/);
+  });
+
+  it('o aviso some quando as diagonais voltam a ser diferentes', async () => {
+    const { user } = await toExplore();
+    const minor = screen.getByLabelText('Diagonal menor (d)');
+    await user.clear(minor);
+    await user.type(minor, '10');
+    await screen.findByRole('complementary', { name: /Diagonais iguais/ });
+    await user.click(screen.getByRole('button', { name: /Diminuir diagonal menor/ }));
+    expect(screen.queryByRole('complementary', { name: /Diagonais iguais/ })).not.toBeInTheDocument();
+  });
+
+  it('a hipótese com D = d também mostra o aviso e aceita a área correta (D × d ÷ 2)', async () => {
+    const { user, repo } = await toExplore();
+    const minor = screen.getByLabelText('Diagonal menor (d)');
+    await user.clear(minor);
+    await user.type(minor, '10');
+    await user.click(screen.getByRole('button', { name: /Registrar hipótese com D = 10 m e d = 10 m/ }));
+    await screen.findByRole('heading', { name: 'Hipótese da equipe' });
+    expect(screen.getByRole('complementary', { name: /Diagonais iguais/ })).toBeInTheDocument();
+    await fillForm(user, { calc: '10 x 10 : 2', answer: '50', unit: 'm²', why: 'O quadrado tem diagonais iguais.' });
+    await submit(user, /Enviar hipótese/);
+    await screen.findByRole('heading', { name: /Devolutiva da tentativa 1/ });
+    expect(screen.getByText(/a área do jardim é 50 m²/)).toBeInTheDocument();
+    const [team] = await repo.listTeams((await repo.getCurrentSession())!.code);
+    expect(team.attempts[0]).toMatchObject({ major: 10, minor: 10, answer: 50, correct: true });
+  });
+});
+
 describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
   it('mostra o aviso de DEMONSTRAÇÃO', async () => {
     const { repo } = makeRepo();
@@ -260,10 +323,64 @@ describe('painel do professor e projeção (DEMONSTRAÇÃO)', () => {
     expect(await screen.findByText(/Refizeram com ÷2/)).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /Ver.*detalhes de Fictícia Delta/ })[0]);
-    await user.click(screen.getAllByRole('button', { name: /Projetar como exemplo anônimo/ })[0]);
+    expect((await repo.getProjection()).kind).toBe('none'); // nada é projetado sem revisão
+    await user.click(screen.getAllByRole('button', { name: /Revisar e projetar como exemplo/ })[0]);
+    const confirm = await screen.findByRole('button', { name: 'Projetar este exemplo' });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /Revisei o texto/ }));
+    await user.click(confirm);
+    await waitFor(async () => expect((await repo.getProjection()).kind).toBe('example'));
     const proj = await repo.getProjection();
-    expect(proj.kind).toBe('example');
     expect(JSON.stringify(proj)).not.toMatch(/Fictícia|Delta/);
+  });
+
+  it('a pré-visualização oculta dados pessoais da justificativa antes de projetar', async () => {
+    const { repo } = makeRepo();
+    const user = userEvent.setup();
+    const { code } = await repo.openSession();
+    const team = await repo.joinSession(code, 'Equipe Ipê');
+    await repo.submitDiagnostic(team.id, {
+      calculation: '8 x 5',
+      rawAnswer: '40',
+      unit: 'm²',
+      justification: 'Eu, Maria Souza, multipliquei e a equipe Ipê chamou 99999-1234 no zap.',
+    });
+    const { container } = render(wrap(repo, <TeacherPanel />));
+    await user.click(screen.getByRole('button', { name: 'Entrar na demonstração' }));
+    await user.click(await screen.findByRole('button', { name: /Ver.*detalhes de Equipe Ipê/ }));
+    await user.click(screen.getByRole('button', { name: /Revisar e projetar como exemplo/ }));
+
+    const box = (await screen.findByText(/é exatamente isto que a turma verá/)).closest('.preview-box') as HTMLElement;
+    expect(box).toHaveTextContent('[oculto]');
+    expect(box).not.toHaveTextContent(/Maria|Souza|99999|Ipê/);
+    expect(await axe(container)).toHaveNoViolations();
+
+    // o professor pode ocultar uma palavra a mais e retirar a justificativa por completo
+    await user.click(screen.getByRole('button', { name: /^multipliquei/ }));
+    expect(box).not.toHaveTextContent(/multipliquei/);
+    await user.click(screen.getByRole('checkbox', { name: /Não projetar a justificativa/ }));
+    expect(box).not.toHaveTextContent(/Justificativa:/);
+    await user.click(screen.getByRole('checkbox', { name: /Revisei o texto/ }));
+    await user.click(screen.getByRole('button', { name: 'Projetar este exemplo' }));
+
+    await waitFor(async () => expect((await repo.getProjection()).kind).toBe('example'));
+    const proj = await repo.getProjection();
+    expect(JSON.stringify(proj)).not.toMatch(/Maria|Souza|99999|Ipê|multipliquei/);
+    expect(proj.kind === 'example' && proj.example.justification).toBe('');
+  });
+
+  it('cancelar a revisão não projeta nada', async () => {
+    const { repo } = makeRepo();
+    const user = userEvent.setup();
+    const { code } = await repo.openSession();
+    await repo.seedFictitiousTeams!(code);
+    render(wrap(repo, <TeacherPanel />));
+    await user.click(screen.getByRole('button', { name: 'Entrar na demonstração' }));
+    await user.click((await screen.findAllByRole('button', { name: /Ver.*detalhes de Fictícia Farol/ }))[0]);
+    await user.click(screen.getAllByRole('button', { name: /Revisar e projetar como exemplo/ })[0]);
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('button', { name: 'Projetar este exemplo' })).not.toBeInTheDocument();
+    expect((await repo.getProjection()).kind).toBe('none');
   });
 
   it('a tela de projeção mostra só dados agregados ou exemplo anônimo', async () => {

@@ -18,7 +18,7 @@ export function ProjectionControls({ projection }: { projection: Projection }) {
   return (
     <section className="card" aria-labelledby="proj">
       <h3 id="proj">Modo projeção</h3>
-      <p>A tela de projeção mostra <strong>só</strong> a distribuição agregada (com no mínimo 3 equipes; respostas únicas ficam em “outras”) ou um exemplo anônimo que você escolheu em “Detalhes”. Nunca mostra apelidos.</p>
+      <p>A tela de projeção mostra <strong>só</strong> a distribuição agregada (com no mínimo 3 equipes; respostas únicas ficam em “outras”) ou um exemplo que você escolheu em “Detalhes” e revisou (ocultando dados pessoais) antes de projetar.</p>
       <p aria-live="polite">{current}</p>
       <div className="actions" role="group" aria-label="Projetar distribuição de respostas">
         {STAGES.map(({ stage, label }) => (

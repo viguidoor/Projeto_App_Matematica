@@ -30,6 +30,7 @@ export function RhombusFigure({ major, minor, showRectangle, showTriangles, onCh
 
   const description =
     `${label}. Diagonal maior D: ${formatNumber(major)} metros (horizontal). Diagonal menor d: ${formatNumber(minor)} metros (vertical).` +
+    (major === minor ? ' Como as diagonais são iguais, o losango é um quadrado.' : '') +
     (showRectangle ? ' Um retângulo tracejado envolve o losango, com lados iguais às diagonais.' : '') +
     (showTriangles ? ' Os quatro triângulos dos cantos, entre o retângulo e o losango, estão hachurados.' : '');
 

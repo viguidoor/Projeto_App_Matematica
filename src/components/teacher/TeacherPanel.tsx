@@ -7,6 +7,7 @@ import { countPatterns } from '../../domain/aggregate';
 import { PATTERNS } from '../../domain/evaluate';
 import { STATUS_ICON, STATUS_LABEL, deriveStatus, maxHintLevel } from '../../domain/status';
 import type { Session, TeamStatus, TeamRecord } from '../../domain/types';
+import { ExamplePreview, type PreviewRequest } from './ExamplePreview';
 import { ExportButtons } from './ExportButtons';
 import { Notes } from './Notes';
 import { ProjectionControls } from './ProjectionControls';
@@ -54,6 +55,7 @@ function Dashboard() {
   const { session, teams, notes, projection } = useSnapshot();
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [preview, setPreview] = useState<PreviewRequest | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
     setError('');
@@ -125,7 +127,7 @@ function Dashboard() {
                     const st = deriveStatus(t);
                     const expanded = openId === t.id;
                     return (
-                      <FragmentRows key={t.id} expanded={expanded} detail={<TeamDetail team={t} />}>
+                      <FragmentRows key={t.id} expanded={expanded} detail={<TeamDetail team={t} onPreview={setPreview} />}>
                         <th scope="row">{t.alias}{t.fictitious && <span className="tag">fictícia</span>}</th>
                         <td><span aria-hidden="true">{STATUS_ICON[st]}</span> {STATUS_LABEL[st]}</td>
                         <td>{t.diagnostic ? `${formatNumber(t.diagnostic.answer)} ${t.diagnostic.unit} ${t.diagnostic.correct ? '✔' : '✎'}` : '—'}</td>
@@ -145,8 +147,20 @@ function Dashboard() {
               </table>
             </div>
           )}
-          <p className="help">✔ confere · ✎ ainda não confere. Este painel mostra apelidos: não o projete.</p>
+          <p className="help">✔ confere · ✎ ainda não confere. Este painel mostra apelidos e textos das equipes: não o projete.</p>
         </section>
+
+        {preview && (
+          <ExamplePreview
+            request={preview}
+            aliases={teams.map((t) => t.alias)}
+            onCancel={() => setPreview(null)}
+            onConfirm={async (example) => {
+              await run(() => repo.setProjection({ kind: 'example', example, showCorrect: false }));
+              setPreview(null);
+            }}
+          />
+        )}
 
         <section className="card" aria-labelledby="padroes">
           <h3 id="padroes">Padrões de erro: hipóteses pedagógicas</h3>

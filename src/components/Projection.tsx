@@ -55,7 +55,7 @@ export function Projection() {
           <p>Losango com D = {formatNumber(ex.major)} m e d = {formatNumber(ex.minor)} m</p>
           <p>Cálculo: <strong>{ex.calculation}</strong></p>
           <p>Resposta: <strong>{ex.answerText}</strong>{projection.showCorrect ? (ex.correct ? ' ✔ confere' : ' ✎ não confere') : ''}</p>
-          <p>Justificativa: “{ex.justification}”</p>
+          {ex.justification && <p>Justificativa: “{ex.justification}”</p>}
         </div>
       </>
     );

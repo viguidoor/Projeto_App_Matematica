@@ -8,13 +8,22 @@ import { useRepository } from '../../data/context';
 import { RepositoryError } from '../../data/repository';
 import { formatNumber, MAX_DIAGONAL, MIN_DIAGONAL } from '../../domain/area';
 import { GENERIC_FEEDBACK, PATTERNS } from '../../domain/evaluate';
-import { DIAGNOSTIC_PROBLEM, GARDEN_CONTEXT } from '../../domain/mission';
+import { DIAGNOSTIC_PROBLEM, DIAGONAL_RULE_HELP, GARDEN_CONTEXT, SQUARE_NOTE } from '../../domain/mission';
 import { maxHintLevel } from '../../domain/status';
 import type { Diagonals, HintLevel, SubmissionInput, TeamRecord } from '../../domain/types';
 
 interface ScreenProps {
   team: TeamRecord;
   onTeam: (team: TeamRecord) => void;
+}
+
+function SquareNote({ major, minor }: Diagonals) {
+  if (major !== minor) return null;
+  return (
+    <aside className="square-note" aria-label={SQUARE_NOTE.title}>
+      <strong>{SQUARE_NOTE.title}.</strong> {SQUARE_NOTE.text}
+    </aside>
+  );
 }
 
 function useActions(team: TeamRecord, onTeam: (t: TeamRecord) => void) {
@@ -91,6 +100,8 @@ export function Explore({ team, onTeam }: ScreenProps) {
             <DiagonalControl label="Diagonal menor (d)" noun="diagonal menor" value={diag.minor}
               min={MIN_DIAGONAL} max={diag.major} onChange={(v) => setDiag((d) => ({ ...d, minor: v }))} />
           </div>
+          <p className="help">{DIAGONAL_RULE_HELP}</p>
+          <SquareNote {...diag} />
           <p className="help">A área ainda não aparece: primeiro a equipe propõe uma hipótese. Podem arrastar os pontos da figura, usar o controle deslizante, digitar ou usar os botões − e +.</p>
           <button type="button" className="btn btn-primary" onClick={goHypothesis}>
             Registrar hipótese com D = {formatNumber(diag.major)} m e d = {formatNumber(diag.minor)} m
@@ -128,6 +139,7 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
       <div className="two-col">
         <RhombusFigure major={major} minor={minor} showRectangle={level >= 2} showTriangles={level >= 3} />
         <div>
+          <SquareNote major={major} minor={minor} />
           <AnswerForm
             legend={`Tentativa ${team.attempts.length + 1}`}
             submitLabel="Enviar hipótese"
