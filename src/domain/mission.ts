@@ -60,6 +60,9 @@ export const NARRATIVE =
 export const GARDEN_CONTEXT =
   'O jardim da escola será refeito em forma de losango. Ajustem as diagonais, investiguem e depois proponham a área.';
 
+export const REVISION_CONTEXT =
+  'Agora a equipe revisa a sua hipótese: explorem de novo, conversem, peçam dicas se quiserem e proponham uma nova resposta.';
+
 /** Aparece quando D = d: o losango é um quadrado (caso particular), sem revelar a área. */
 export const SQUARE_NOTE = {
   title: 'Diagonais iguais: o losango virou um quadrado',
@@ -70,3 +73,14 @@ export const SQUARE_NOTE = {
 
 export const DIAGONAL_RULE_HELP =
   'A diagonal maior (D) nunca fica menor que a menor (d). Se D e d forem iguais, o losango é um quadrado.';
+
+/** Nomenclatura visual: a MISSÃO é o conjunto; a ETAPA é o passo dentro dela. */
+export const MISSION = { number: 1, name: 'Jardim Geométrico' } as const;
+
+export const STAGES = [
+  { n: 1, label: 'Diagnóstico' },
+  { n: 2, label: 'Hipótese inicial' },
+  { n: 3, label: 'Tentativas e revisões' },
+  { n: 4, label: 'Problema final' },
+] as const;
+export type StageNumber = 1 | 2 | 3 | 4;

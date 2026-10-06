@@ -1,6 +1,8 @@
 # Operação Área: arquitetura proposta para a Etapa 2
 
-**Estado:** proposta para aprovação. **Nada disto foi implementado.** O app continua em modo DEMONSTRAÇÃO. Esta versão **substitui** `ETAPA2_PROPOSTA.md` (que considerava só o Firebase) e **muda minha recomendação**, pelos motivos da seção 2.
+> **Atualização (Etapa 2a concluída, 06/10/2026):** o Supabase foi aprovado e a Etapa 2a foi implementada **somente em ambiente local**. Mudanças em relação a este documento: (1) a **hipótese inicial** virou uma etapa própria (`submissions.kind = 'hipotese'`); (2) o `SupabaseRepository` usa o tempo real **com consulta periódica de reserva e reconciliação**; (3) não há keep-alive (decisão do professor); (4) a limitação de 30 logins anônimos/h por IP foi **medida** (entram 30 de 35). Resultados, problemas e decisões pendentes: `docs/ETAPA2A_RELATORIO.md`; esquema real: `docs/ETAPA2A_ESQUEMA.md`.
+
+**Estado (original):** proposta para aprovação. **Nada disto foi implementado.** O app continua em modo DEMONSTRAÇÃO. Esta versão **substitui** `ETAPA2_PROPOSTA.md` (que considerava só o Firebase) e **muda minha recomendação**, pelos motivos da seção 2.
 
 > **Nome do projeto:** `operacao-area`. Não há referência ao nome antigo em nenhum arquivo do projeto. Restam dois lugares que dependem de você: o repositório do GitHub (*Settings → General → Repository name*; o GitHub redireciona o endereço antigo) e a pasta local. Depois: `git remote set-url origin https://github.com/viguidoor/operacao-area`.
 

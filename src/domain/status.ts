@@ -23,7 +23,7 @@ export function deriveStatus(team: TeamRecord): TeamStatus {
   if (team.exit) return 'concluiu';
 
   const lastHint = Math.max(0, ...team.hints.map((h) => h.viewedAt));
-  const lastAttempt = Math.max(0, ...team.attempts.map((a) => a.submittedAt));
+  const lastAttempt = Math.max(0, team.hypothesis?.submittedAt ?? 0, ...team.attempts.map((a) => a.submittedAt));
   if (lastHint > 0 || lastAttempt > 0) return lastHint > lastAttempt ? 'pediu_dica' : 'tentou';
 
   if (team.exploringSince !== null) return 'explorando';

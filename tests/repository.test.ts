@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateAlias } from '../src/data/demoRepository';
 import { deriveStatus } from '../src/domain/status';
-import { input, joined, makeRepo, toHypothesis } from './helpers';
+import { input, joined, makeRepo, revise, toHypothesis, withHypothesis } from './helpers';
 
 describe('sessão e entrada', () => {
   it('abre sessão com código temporário de 6 caracteres e aceita entrada', async () => {
@@ -45,57 +45,69 @@ describe('sessão e entrada', () => {
   });
 });
 
-describe('separação entre diagnóstico, tentativas e saída', () => {
+describe('separação: diagnóstico → hipótese inicial → tentativas/revisões → saída', () => {
   it('guarda cada tipo de registro em campo próprio', async () => {
     const { repo, team } = await joined();
     await repo.submitDiagnostic(team.id, input('40'));
     await repo.saveProgress(team.id, { phase: 'hipotese' });
     await repo.recordHint(team.id, 1);
-    await repo.submitAttempt(team.id, input('60'));
-    await repo.saveProgress(team.id, { phase: 'exploracao' });
-    await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.submitAttempt(team.id, input('30'));
+    await repo.submitHypothesis(team.id, input('60'));
+    await revise(repo, team.id, '30');
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input('24', 'm²', { calculation: '12 × 4 ÷ 2' }));
 
     const t = (await repo.getTeam(team.id))!;
-    expect(t.diagnostic).toMatchObject({ major: 8, minor: 5, answer: 40, correct: false, patternId: 'produto_sem_metade' });
-    expect(t.attempts).toHaveLength(2);
-    expect(t.attempts[0]).toMatchObject({ n: 1, major: 10, minor: 6, answer: 60, hintLevel: 1, correct: false });
-    expect(t.attempts[1]).toMatchObject({ n: 2, answer: 30, correct: true });
-    expect(t.exit).toMatchObject({ major: 12, minor: 4, answer: 24, correct: true });
+    expect(t.diagnostic).toMatchObject({ major: 8, minor: 5, answer: 40, correct: false, patternId: 'produto_sem_metade', hintLevel: 0 });
+    expect(t.hypothesis).toMatchObject({ major: 10, minor: 6, answer: 60, hintLevel: 1, correct: false, patternId: 'produto_sem_metade' });
+    expect(t.attempts).toHaveLength(1);
+    expect(t.attempts[0]).toMatchObject({ n: 1, major: 10, minor: 6, answer: 30, hintLevel: 1, correct: true });
+    expect(t.exit).toMatchObject({ major: 12, minor: 4, answer: 24, correct: true, hintLevel: 0 });
     expect(t.phase).toBe('concluido');
     expect(deriveStatus(t)).toBe('concluiu');
   });
 
-  it('o diagnóstico é único e as respostas não se misturam', async () => {
+  it('o diagnóstico e a hipótese inicial são únicos; as respostas não se misturam', async () => {
     const { repo, team } = await joined();
     await repo.submitDiagnostic(team.id, input('20'));
     await expect(repo.submitDiagnostic(team.id, input('40'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect((await repo.getTeam(team.id))!.diagnostic?.answer).toBe(20);
+    await repo.saveProgress(team.id, { phase: 'hipotese' });
+    await repo.submitHypothesis(team.id, input('60'));
+    await repo.saveProgress(team.id, { phase: 'exploracao' });
+    await repo.saveProgress(team.id, { phase: 'hipotese' });
+    await expect(repo.submitHypothesis(team.id, input('30'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect((await repo.getTeam(team.id))!.hypothesis?.answer).toBe(60);
   });
 
-  it('a saída exige ter passado pela missão e só pode ser enviada uma vez', async () => {
+  it('a tentativa/revisão só existe depois da hipótese inicial', async () => {
+    const { repo, team } = await joined();
+    await toHypothesis(repo, team.id);
+    await expect(repo.submitAttempt(team.id, input('30'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await repo.submitHypothesis(team.id, input('30'));
+    expect((await repo.getTeam(team.id))!.attempts).toEqual([]);
+  });
+
+  it('a saída exige ter registrado a hipótese inicial e só pode ser enviada uma vez', async () => {
     const { repo, team } = await joined();
     await repo.submitDiagnostic(team.id, input('20'));
     await expect(repo.submitExit(team.id, input('24'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     await expect(repo.saveProgress(team.id, { phase: 'saida' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
     await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.submitAttempt(team.id, input('30'));
+    await repo.submitHypothesis(team.id, input('30'));
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input('24'));
     await expect(repo.submitExit(team.id, input('24'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
   });
 
-  it('a tentativa usa as medidas guardadas da equipe e rejeita medidas inválidas', async () => {
+  it('a hipótese usa as medidas guardadas da equipe e rejeita medidas inválidas', async () => {
     const { repo, team } = await joined();
     await repo.submitDiagnostic(team.id, input('20'));
     await expect(repo.saveProgress(team.id, { diagonals: { major: 4, minor: 10 } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     await expect(repo.saveProgress(team.id, { diagonals: { major: 99, minor: 10 } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     await repo.saveProgress(team.id, { diagonals: { major: 12, minor: 5 } });
     await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.submitAttempt(team.id, input('30'));
-    expect((await repo.getTeam(team.id))!.attempts[0]).toMatchObject({ major: 12, minor: 5, answer: 30, correct: true });
+    await repo.submitHypothesis(team.id, input('30'));
+    expect((await repo.getTeam(team.id))!.hypothesis).toMatchObject({ major: 12, minor: 5, answer: 30, correct: true });
   });
 
   it('rejeita envio inválido sem gravar nada', async () => {
@@ -105,9 +117,37 @@ describe('separação entre diagnóstico, tentativas e saída', () => {
     expect((await repo.getTeam(team.id))!.diagnostic).toBeNull();
   });
 
-  it('não permite tentativa antes de explorar nem fora da ordem', async () => {
+  it('rejeita dado pessoal evidente nos textos livres (e-mail, telefone, números longos, endereço web)', async () => {
     const { repo, team } = await joined();
+    for (const justification of ['escrevi para ana@escola.com agora', 'liguei 99999-1234 ontem', 'matrícula 20240123 aqui', 'vi em www.site.com.br hoje']) {
+      await expect(repo.submitDiagnostic(team.id, input('20', 'm²', { justification }))).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    }
+    await expect(repo.submitDiagnostic(team.id, input('20', 'm²', { calculation: '8 x 5 : 2 = 20000' }))).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect((await repo.getTeam(team.id))!.diagnostic).toBeNull();
+  });
+
+  it('não permite hipótese antes de explorar nem fora da ordem', async () => {
+    const { repo, team } = await joined();
+    await expect(repo.submitHypothesis(team.id, input('30'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
     await expect(repo.submitAttempt(team.id, input('30'))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  });
+
+  it('é idempotente: repetir o mesmo requestId não duplica nem muda o registro', async () => {
+    const { repo, team } = await joined();
+    const req = '11111111-1111-4111-8111-111111111111';
+    const a = await repo.submitDiagnostic(team.id, input('20', 'm²', { requestId: req }));
+    const b = await repo.submitDiagnostic(team.id, input('20', 'm²', { requestId: req }));
+    expect(b).toEqual(a);
+    await repo.saveProgress(team.id, { phase: 'hipotese' });
+    const h1 = await repo.submitHypothesis(team.id, input('60', 'm²', { requestId: '22222222-2222-4222-8222-222222222222' }));
+    const h2 = await repo.submitHypothesis(team.id, input('60', 'm²', { requestId: '22222222-2222-4222-8222-222222222222' }));
+    expect(h2).toEqual(h1);
+    await repo.saveProgress(team.id, { phase: 'exploracao' });
+    await repo.saveProgress(team.id, { phase: 'hipotese' });
+    const r = '33333333-3333-4333-8333-333333333333';
+    await repo.submitAttempt(team.id, input('30', 'm²', { requestId: r }));
+    await repo.submitAttempt(team.id, input('30', 'm²', { requestId: r }));
+    expect((await repo.getTeam(team.id))!.attempts).toHaveLength(1);
   });
 });
 
@@ -123,7 +163,7 @@ describe('estado exibido ao professor', () => {
     await repo.saveProgress(team.id, { phase: 'hipotese' });
     await repo.recordHint(team.id, 1);
     expect(await st()).toBe('pediu_dica');
-    await repo.submitAttempt(team.id, input('36'));
+    await repo.submitHypothesis(team.id, input('36'));
     expect(await st()).toBe('tentou');
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input('24'));
@@ -151,6 +191,26 @@ describe('notas, projeção e equipes fictícias', () => {
     await repo.removeFictitiousTeams!(code);
     const rest = await repo.listTeams(code);
     expect(rest.map((t) => t.id)).toEqual([team.id]);
+  });
+  it('apagar a sessão remove equipes, respostas e notas', async () => {
+    const { repo, team, code } = await joined();
+    await withHypothesis(repo, team.id);
+    await repo.addNote(code, { team: null, difficulty: 'x', intervention: '', response: '' });
+    await repo.deleteSession(code);
+    expect(await repo.getCurrentSession()).toBeNull();
+    expect(await repo.listTeams(code)).toEqual([]);
+    expect(await repo.listNotes(code)).toEqual([]);
+    expect(await repo.getTeam(team.id)).toBeNull();
+  });
+  it('a visão de projeção só tem dados agregados ou exemplo revisado, nunca apelidos', async () => {
+    const { repo, code } = await joined();
+    await repo.seedFictitiousTeams!(code);
+    expect(await repo.getProjectionView(code)).toEqual({ kind: 'none' });
+    await repo.setProjection({ kind: 'distribution', stage: 'hipotese', showCorrect: false });
+    const view = await repo.getProjectionView(code);
+    expect(view.kind).toBe('distribution');
+    expect(JSON.stringify(view)).not.toMatch(/Fictícia|Equipe Teste/);
+    expect(await repo.getProjectionView('ZZZZZZ')).toEqual({ kind: 'none' });
   });
   it('notifica assinantes a cada mudança', async () => {
     const { repo, team } = await joined();

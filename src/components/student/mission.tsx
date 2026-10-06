@@ -8,7 +8,7 @@ import { useRepository } from '../../data/context';
 import { RepositoryError } from '../../data/repository';
 import { formatNumber, MAX_DIAGONAL, MIN_DIAGONAL } from '../../domain/area';
 import { GENERIC_FEEDBACK, PATTERNS } from '../../domain/evaluate';
-import { DIAGNOSTIC_PROBLEM, DIAGONAL_RULE_HELP, GARDEN_CONTEXT, SQUARE_NOTE } from '../../domain/mission';
+import { DIAGNOSTIC_PROBLEM, DIAGONAL_RULE_HELP, GARDEN_CONTEXT, REVISION_CONTEXT, SQUARE_NOTE } from '../../domain/mission';
 import { maxHintLevel } from '../../domain/status';
 import type { Diagonals, HintLevel, SubmissionInput, TeamRecord } from '../../domain/types';
 
@@ -66,6 +66,7 @@ export function Explore({ team, onTeam }: ScreenProps) {
   const [diag, setDiag] = useState<Diagonals>(team.diagonals);
   const [error, setError] = useState('');
   const level = maxHintLevel(team);
+  const isRevision = team.hypothesis !== null;
 
   // Guarda as medidas (com pequena espera) para sobreviverem a uma atualização de página.
   useEffect(() => {
@@ -89,8 +90,8 @@ export function Explore({ team, onTeam }: ScreenProps) {
 
   return (
     <section>
-      <ScreenHeading>Missão 1: o Jardim Geométrico</ScreenHeading>
-      <p className="lead">{GARDEN_CONTEXT}</p>
+      <ScreenHeading>{isRevision ? 'Revisão: explorem o jardim de novo' : 'Hipótese inicial: explorem o jardim'}</ScreenHeading>
+      <p className="lead">{isRevision ? REVISION_CONTEXT : GARDEN_CONTEXT}</p>
       <div className="two-col">
         <RhombusFigure {...diag} showRectangle={level >= 2} showTriangles={level >= 3} onChange={setDiag} />
         <div>
@@ -102,9 +103,9 @@ export function Explore({ team, onTeam }: ScreenProps) {
           </div>
           <p className="help">{DIAGONAL_RULE_HELP}</p>
           <SquareNote {...diag} />
-          <p className="help">A área ainda não aparece: primeiro a equipe propõe uma hipótese. Podem arrastar os pontos da figura, usar o controle deslizante, digitar ou usar os botões − e +.</p>
+          <p className="help">A área ainda não aparece: primeiro a equipe propõe a sua resposta. Podem arrastar os pontos da figura, usar o controle deslizante, digitar ou usar os botões − e +.</p>
           <button type="button" className="btn btn-primary" onClick={goHypothesis}>
-            Registrar hipótese com D = {formatNumber(diag.major)} m e d = {formatNumber(diag.minor)} m
+            {isRevision ? 'Registrar nova tentativa' : 'Registrar hipótese inicial'} com D = {formatNumber(diag.major)} m e d = {formatNumber(diag.minor)} m
           </button>
           <p className="field-error" role="alert">{error}</p>
         </div>
@@ -130,9 +131,11 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
   const { repo, refresh } = useActions(team, onTeam);
   const level = maxHintLevel(team);
   const { major, minor } = team.diagonals;
+  const isRevision = team.hypothesis !== null;
+  const n = team.attempts.length + 1;
   return (
     <section>
-      <ScreenHeading>Hipótese da equipe</ScreenHeading>
+      <ScreenHeading>{isRevision ? `Tentativa ${n} da equipe` : 'Hipótese inicial da equipe'}</ScreenHeading>
       <p className="lead">
         Jardim com diagonal maior D = {formatNumber(major)} m e diagonal menor d = {formatNumber(minor)} m. Qual será a área?
       </p>
@@ -141,10 +144,11 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
         <div>
           <SquareNote major={major} minor={minor} />
           <AnswerForm
-            legend={`Tentativa ${team.attempts.length + 1}`}
-            submitLabel="Enviar hipótese"
+            legend={isRevision ? `Tentativa ${n}` : 'Hipótese inicial'}
+            submitLabel={isRevision ? 'Enviar tentativa' : 'Enviar hipótese inicial'}
             onSubmit={async (input) => {
-              await repo.submitAttempt(team.id, input);
+              if (isRevision) await repo.submitAttempt(team.id, input);
+              else await repo.submitHypothesis(team.id, input);
               await refresh();
             }}
           />
@@ -161,8 +165,9 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
 export function Feedback({ team, onTeam }: ScreenProps) {
   const { repo, refresh } = useActions(team, onTeam);
   const [confirming, setConfirming] = useState(false);
-  const last = team.attempts[team.attempts.length - 1];
+  const last = team.attempts[team.attempts.length - 1] ?? team.hypothesis;
   if (!last) return null;
+  const title = team.attempts.length === 0 ? 'Devolutiva da hipótese inicial' : `Devolutiva da tentativa ${team.attempts.length}`;
   const level = maxHintLevel(team);
 
   const go = async (phase: 'exploracao' | 'saida') => {
@@ -172,7 +177,7 @@ export function Feedback({ team, onTeam }: ScreenProps) {
 
   return (
     <section>
-      <ScreenHeading>Devolutiva da tentativa {last.n}</ScreenHeading>
+      <ScreenHeading>{title}</ScreenHeading>
       <div className="two-col">
         <RhombusFigure major={last.major} minor={last.minor} showRectangle={level >= 2} showTriangles={level >= 3} />
         <div>

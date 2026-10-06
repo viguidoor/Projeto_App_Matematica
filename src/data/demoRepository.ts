@@ -1,4 +1,5 @@
 import { validateDiagonalPair } from '../domain/area';
+import { buildDistribution } from '../domain/aggregate';
 import { evaluateAnswer, validateSubmissionInput } from '../domain/evaluate';
 import { DIAGNOSTIC_PROBLEM, EXIT_PROBLEM, EXPLORATION_START } from '../domain/mission';
 import { maxHintLevel } from '../domain/status';
@@ -7,7 +8,9 @@ import type {
   DiagnosticResult,
   ExitResult,
   HintLevel,
+  HypothesisResult,
   Projection,
+  ProjectionView,
   Session,
   Submission,
   SubmissionInput,
@@ -17,7 +20,7 @@ import type {
 import type { KeyValueStore } from './kvStore';
 import { RepositoryError, type ProgressPatch, type SessionRepository } from './repository';
 
-const STORAGE_KEY = 'operacao-area/demo/v1';
+const STORAGE_KEY = 'operacao-area/demo/v2';
 const SESSION_DURATION_MS = 90 * 60 * 1000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -26,6 +29,10 @@ interface DemoState {
   teams: Record<string, TeamRecord>;
   notes: TeacherNote[];
   projection: Projection;
+  /** Envios já gravados, por `${teamId}:${requestId}` (idempotência). */
+  requests: Record<string, Submission>;
+  /** Códigos de sessões anteriores: entrar com eles diz "sessão encerrada", não "código não encontrado". */
+  pastCodes: string[];
 }
 
 export interface Clock {
@@ -33,7 +40,7 @@ export interface Clock {
   random(): number;
 }
 
-const emptyState = (): DemoState => ({ session: null, teams: {}, notes: [], projection: { kind: 'none' } });
+const emptyState = (): DemoState => ({ session: null, teams: {}, notes: [], projection: { kind: 'none' }, requests: {}, pastCodes: [] });
 
 export function validateAlias(raw: string): string | null {
   const alias = raw.trim().replace(/\s+/g, ' ');
@@ -46,8 +53,9 @@ export function validateAlias(raw: string): string | null {
 /**
  * Repositório de DEMONSTRAÇÃO: tudo roda no navegador e é guardado no armazenamento local.
  * - Não há autenticação, nem servidor, nem sincronização entre dispositivos.
- * - A correção roda no próprio navegador (o gabarito está no código do app). Só na Etapa 2 a
- *   verificação passa para o servidor.
+ * - A correção roda no próprio navegador (o gabarito está no código do app). No modo conectado,
+ *   a verificação é feita no servidor.
+ * - É o plano B da aula e a referência de comportamento para o `SupabaseRepository`.
  */
 export class DemoRepository implements SessionRepository {
   readonly mode = 'demo' as const;
@@ -67,7 +75,7 @@ export class DemoRepository implements SessionRepository {
     if (!raw) return emptyState();
     try {
       const parsed = JSON.parse(raw) as Partial<DemoState>;
-      return { ...emptyState(), ...parsed, teams: parsed.teams ?? {}, notes: parsed.notes ?? [] };
+      return { ...emptyState(), ...parsed, teams: parsed.teams ?? {}, notes: parsed.notes ?? [], requests: parsed.requests ?? {}, pastCodes: parsed.pastCodes ?? [] };
     } catch {
       return emptyState();
     }
@@ -98,11 +106,17 @@ export class DemoRepository implements SessionRepository {
     return team;
   }
 
-  private assertSessionActive(state: DemoState, team: TeamRecord) {
+  private isClosed(state: DemoState, team: TeamRecord): boolean {
     const s = state.session;
-    if (!s || s.code !== team.sessionCode || s.closedAt !== null) {
-      throw new RepositoryError('SESSION_CLOSED', 'A sessão foi encerrada pelo professor.');
-    }
+    return !s || s.code !== team.sessionCode || s.closedAt !== null;
+  }
+
+  private assertSessionActive(state: DemoState, team: TeamRecord) {
+    if (this.isClosed(state, team)) throw new RepositoryError('SESSION_CLOSED', 'A sessão foi encerrada pelo professor.');
+  }
+
+  private present(state: DemoState, team: TeamRecord): TeamRecord {
+    return { ...team, sessionClosed: this.isClosed(state, team) };
   }
 
   // ---------------------------------------------------------------- professor
@@ -110,6 +124,7 @@ export class DemoRepository implements SessionRepository {
   async openSession(): Promise<Session> {
     return this.mutate((state) => {
       const openedAt = this.now();
+      if (state.session) state.pastCodes.push(state.session.code);
       const session: Session = { code: this.newCode(), openedAt, expiresAt: openedAt + SESSION_DURATION_MS, closedAt: null };
       state.session = session;
       state.projection = { kind: 'none' };
@@ -120,6 +135,22 @@ export class DemoRepository implements SessionRepository {
   async closeSession(code: string): Promise<void> {
     this.mutate((state) => {
       if (state.session?.code === code && state.session.closedAt === null) state.session.closedAt = this.now();
+    });
+  }
+
+  async deleteSession(code: string): Promise<void> {
+    this.mutate((state) => {
+      for (const [id, team] of Object.entries(state.teams)) {
+        if (team.sessionCode === code) delete state.teams[id];
+      }
+      for (const key of Object.keys(state.requests)) {
+        if (!state.teams[key.split(':')[0]]) delete state.requests[key];
+      }
+      state.notes = state.notes.filter((n) => n.sessionCode !== code);
+      if (state.session?.code === code) {
+        state.session = null;
+        state.projection = { kind: 'none' };
+      }
     });
   }
 
@@ -158,12 +189,26 @@ export class DemoRepository implements SessionRepository {
     return this.load().projection;
   }
 
+  async getProjectionView(code?: string): Promise<ProjectionView> {
+    const state = this.load();
+    const session = state.session;
+    if (!session || (code && code.trim().toUpperCase() !== session.code)) return { kind: 'none' };
+    const p = state.projection;
+    if (p.kind === 'none') return p;
+    if (p.kind === 'example') return p;
+    const teams = Object.values(state.teams).filter((t) => t.sessionCode === session.code);
+    return { kind: 'distribution', stage: p.stage, showCorrect: p.showCorrect, distribution: buildDistribution(teams, p.stage) };
+  }
+
   // ---------------------------------------------------------------- estudante
 
   async joinSession(rawCode: string, rawAlias: string): Promise<TeamRecord> {
     return this.mutate((state) => {
       const code = rawCode.trim().toUpperCase();
       const session = state.session;
+      if (state.pastCodes.includes(code) && session?.code !== code) {
+        throw new RepositoryError('SESSION_CLOSED', 'Essa sessão não está aberta. Peçam um novo código ao professor.');
+      }
       if (!session || session.code !== code) {
         throw new RepositoryError('SESSION_NOT_FOUND', 'Código não encontrado. Confiram o código mostrado pelo professor.');
       }
@@ -188,17 +233,20 @@ export class DemoRepository implements SessionRepository {
         diagonals: { ...EXPLORATION_START },
         exploringSince: null,
         diagnostic: null,
+        hypothesis: null,
         hints: [],
         attempts: [],
         exit: null,
       };
       state.teams[team.id] = team;
-      return team;
+      return this.present(state, team);
     });
   }
 
   async getTeam(teamId: string): Promise<TeamRecord | null> {
-    return this.load().teams[teamId] ?? null;
+    const state = this.load();
+    const team = state.teams[teamId];
+    return team ? this.present(state, team) : null;
   }
 
   async saveProgress(teamId: string, patch: ProgressPatch): Promise<TeamRecord> {
@@ -219,20 +267,21 @@ export class DemoRepository implements SessionRepository {
       if (patch.phase) {
         const from = team.phase;
         const to = patch.phase;
+        if (from === to) return this.present(state, team); // repetição do mesmo pedido: sem efeito
         const allowed =
           (from === 'exploracao' && to === 'hipotese') ||
           (from === 'hipotese' && to === 'exploracao') ||
           (from === 'feedback' && to === 'exploracao') ||
-          (from === 'feedback' && to === 'saida' && team.attempts.length > 0);
+          (from === 'feedback' && to === 'saida' && team.hypothesis !== null);
         if (!allowed) throw new RepositoryError('INVALID_STATE', `Não é possível ir de "${from}" para "${to}".`);
         team.phase = to;
         if (team.exploringSince === null && to !== 'saida') team.exploringSince = this.now();
       }
-      return team;
+      return this.present(state, team);
     });
   }
 
-  private buildSubmission(input: SubmissionInput, major: number, minor: number): Submission {
+  private buildSubmission(input: SubmissionInput, major: number, minor: number, hintLevel: 0 | HintLevel): Submission {
     const check = validateSubmissionInput(input);
     if (!check.ok) throw new RepositoryError('INVALID_INPUT', Object.values(check.errors)[0] ?? 'Dados inválidos.');
     const { correct, patternId } = evaluateAnswer(major, minor, check.value.answer, check.value.unit);
@@ -247,20 +296,34 @@ export class DemoRepository implements SessionRepository {
       correct,
       patternId,
       submittedAt: this.now(),
+      hintLevel,
     };
+  }
+
+  /** Idempotência: repetir o mesmo `requestId` devolve o registro já gravado. */
+  private replay<T extends Submission>(state: DemoState, teamId: string, input: SubmissionInput): T | null {
+    if (!input.requestId) return null;
+    return (state.requests[`${teamId}:${input.requestId}`] as T | undefined) ?? null;
+  }
+
+  private remember(state: DemoState, teamId: string, input: SubmissionInput, result: Submission) {
+    if (input.requestId) state.requests[`${teamId}:${input.requestId}`] = result;
   }
 
   async submitDiagnostic(teamId: string, input: SubmissionInput): Promise<DiagnosticResult> {
     return this.mutate((state) => {
       const team = this.teamOrThrow(state, teamId);
+      const again = this.replay<DiagnosticResult>(state, teamId, input);
+      if (again) return again;
       this.assertSessionActive(state, team);
       if (team.phase !== 'diagnostico' || team.diagnostic) {
         throw new RepositoryError('INVALID_STATE', 'O diagnóstico já foi enviado.');
       }
       const { major, minor } = DIAGNOSTIC_PROBLEM.measures;
-      const result = this.buildSubmission(input, major, minor);
+      const result = this.buildSubmission(input, major, minor, 0);
       team.diagnostic = result;
       team.phase = 'exploracao';
+      this.remember(state, teamId, input, result);
       return result;
     });
   }
@@ -275,24 +338,44 @@ export class DemoRepository implements SessionRepository {
       }
       if (![1, 2, 3].includes(level)) throw new RepositoryError('INVALID_INPUT', 'Dica inexistente.');
       const current = maxHintLevel(team);
-      if (level <= current) return team; // já vista: não duplica o registro
+      if (level <= current) return this.present(state, team); // já vista: não duplica o registro
       if (level !== current + 1) throw new RepositoryError('INVALID_STATE', 'As dicas são liberadas em ordem.');
       team.hints.push({ level, viewedAt: this.now() });
-      return team;
+      return this.present(state, team);
+    });
+  }
+
+  async submitHypothesis(teamId: string, input: SubmissionInput): Promise<HypothesisResult> {
+    return this.mutate((state) => {
+      const team = this.teamOrThrow(state, teamId);
+      const again = this.replay<HypothesisResult>(state, teamId, input);
+      if (again) return again;
+      this.assertSessionActive(state, team);
+      if (team.hypothesis) throw new RepositoryError('INVALID_STATE', 'A hipótese inicial já foi registrada. Usem uma nova tentativa.');
+      if (!team.diagnostic || team.phase !== 'hipotese') {
+        throw new RepositoryError('INVALID_STATE', 'Registrem a hipótese depois de explorar o jardim.');
+      }
+      const result = this.buildSubmission(input, team.diagonals.major, team.diagonals.minor, maxHintLevel(team));
+      team.hypothesis = result;
+      team.phase = 'feedback';
+      this.remember(state, teamId, input, result);
+      return result;
     });
   }
 
   async submitAttempt(teamId: string, input: SubmissionInput): Promise<Attempt> {
     return this.mutate((state) => {
       const team = this.teamOrThrow(state, teamId);
+      const again = this.replay<Attempt>(state, teamId, input);
+      if (again) return again;
       this.assertSessionActive(state, team);
-      if (!team.diagnostic || team.phase !== 'hipotese') {
-        throw new RepositoryError('INVALID_STATE', 'Registrem a hipótese depois de explorar o jardim.');
-      }
-      const submission = this.buildSubmission(input, team.diagonals.major, team.diagonals.minor);
-      const attempt: Attempt = { ...submission, n: team.attempts.length + 1, hintLevel: maxHintLevel(team) };
+      if (!team.hypothesis) throw new RepositoryError('INVALID_STATE', 'Registrem primeiro a hipótese inicial.');
+      if (team.phase !== 'hipotese') throw new RepositoryError('INVALID_STATE', 'Explorem o jardim antes de registrar uma nova tentativa.');
+      const submission = this.buildSubmission(input, team.diagonals.major, team.diagonals.minor, maxHintLevel(team));
+      const attempt: Attempt = { ...submission, n: team.attempts.length + 1 };
       team.attempts.push(attempt);
       team.phase = 'feedback';
+      this.remember(state, teamId, input, attempt);
       return attempt;
     });
   }
@@ -300,12 +383,15 @@ export class DemoRepository implements SessionRepository {
   async submitExit(teamId: string, input: SubmissionInput): Promise<ExitResult> {
     return this.mutate((state) => {
       const team = this.teamOrThrow(state, teamId);
+      const again = this.replay<ExitResult>(state, teamId, input);
+      if (again) return again;
       this.assertSessionActive(state, team);
       if (team.phase !== 'saida' || team.exit) throw new RepositoryError('INVALID_STATE', 'O problema final não está disponível.');
       const { major, minor } = EXIT_PROBLEM.measures;
-      const result = this.buildSubmission(input, major, minor);
+      const result = this.buildSubmission(input, major, minor, 0);
       team.exit = result;
       team.phase = 'concluido';
+      this.remember(state, teamId, input, result);
       return result;
     });
   }
@@ -324,8 +410,23 @@ export class DemoRepository implements SessionRepository {
     const base = this.clock.now();
     const text = { calculation: 'Cálculo fictício', justification: 'Justificativa fictícia de exemplo.' };
     const sub = (rawAnswer: string, unit: 'm' | 'm²' = 'm²'): SubmissionInput => ({ ...text, rawAnswer, unit });
-    const hint = async (id: string, level: HintLevel, at: number) => {
-      this.nowOverride = at;
+    const at = (t: number) => {
+      this.nowOverride = t;
+    };
+    const toHypothesis = async (id: string, t: number) => {
+      at(t);
+      await this.saveProgress(id, { phase: 'hipotese' });
+    };
+    const revise = async (id: string, t: number, answer: string) => {
+      at(t);
+      await this.saveProgress(id, { phase: 'exploracao' });
+      at(t + 100);
+      await this.saveProgress(id, { phase: 'hipotese' });
+      at(t + 200);
+      await this.submitAttempt(id, sub(answer));
+    };
+    const hint = async (id: string, level: HintLevel, t: number) => {
+      at(t);
       await this.recordHint(id, level);
     };
 
@@ -334,83 +435,69 @@ export class DemoRepository implements SessionRepository {
       {
         alias: 'Fictícia Brisa',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('20'));
         },
       },
       {
         alias: 'Fictícia Cacto',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('40'));
-          this.nowOverride = t + 2000;
+          at(t + 2000);
           await this.saveProgress(id, { diagonals: { major: 12, minor: 6 } });
         },
       },
       {
         alias: 'Fictícia Delta',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('40'));
-          this.nowOverride = t + 2000;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 3000;
-          await this.submitAttempt(id, sub('60'));
+          await toHypothesis(id, t + 2000);
+          at(t + 3000);
+          await this.submitHypothesis(id, sub('60'));
           await hint(id, 1, t + 4000);
         },
       },
       {
         alias: 'Fictícia Eclipse',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('13'));
-          this.nowOverride = t + 2000;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 3000;
-          await this.submitAttempt(id, sub('60'));
-          this.nowOverride = t + 3500;
-          await this.saveProgress(id, { phase: 'exploracao' });
-          this.nowOverride = t + 3600;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 4000;
-          await this.submitAttempt(id, sub('16'));
+          await toHypothesis(id, t + 2000);
+          at(t + 3000);
+          await this.submitHypothesis(id, sub('60'));
+          await revise(id, t + 3500, '16');
         },
       },
       {
         alias: 'Fictícia Farol',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('40'));
-          this.nowOverride = t + 2000;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 3000;
-          await this.submitAttempt(id, sub('60'));
+          await toHypothesis(id, t + 2000);
+          at(t + 3000);
+          await this.submitHypothesis(id, sub('60'));
           await hint(id, 1, t + 4000);
           await hint(id, 2, t + 5000);
-          this.nowOverride = t + 6000;
-          await this.saveProgress(id, { phase: 'exploracao' });
-          this.nowOverride = t + 6100;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 7000;
-          await this.submitAttempt(id, sub('30'));
-          this.nowOverride = t + 8000;
+          await revise(id, t + 6000, '30');
+          at(t + 8000);
           await this.saveProgress(id, { phase: 'saida' });
-          this.nowOverride = t + 9000;
+          at(t + 9000);
           await this.submitExit(id, sub('24'));
         },
       },
       {
         alias: 'Fictícia Girassol',
         run: async (id, t) => {
-          this.nowOverride = t + 1000;
+          at(t + 1000);
           await this.submitDiagnostic(id, sub('20'));
-          this.nowOverride = t + 2000;
-          await this.saveProgress(id, { phase: 'hipotese' });
-          this.nowOverride = t + 3000;
-          await this.submitAttempt(id, sub('30'));
-          this.nowOverride = t + 4000;
+          await toHypothesis(id, t + 2000);
+          at(t + 3000);
+          await this.submitHypothesis(id, sub('30'));
+          at(t + 4000);
           await this.saveProgress(id, { phase: 'saida' });
-          this.nowOverride = t + 5000;
+          at(t + 5000);
           await this.submitExit(id, sub('48'));
         },
       },
@@ -430,6 +517,7 @@ export class DemoRepository implements SessionRepository {
             diagonals: { ...EXPLORATION_START },
             exploringSince: null,
             diagnostic: null,
+            hypothesis: null,
             hints: [],
             attempts: [],
             exit: null,

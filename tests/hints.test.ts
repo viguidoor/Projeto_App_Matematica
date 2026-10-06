@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RepositoryError } from '../src/data/repository';
 import { HINTS } from '../src/domain/mission';
 import { deriveStatus, maxHintLevel } from '../src/domain/status';
-import { input, joined, toHypothesis } from './helpers';
+import { input, joined, revise, toHypothesis, withHypothesis } from './helpers';
 
 describe('conteúdo das dicas', () => {
   it('são três, progressivas, na ordem pedida', () => {
@@ -39,18 +39,17 @@ describe('fluxo das dicas', () => {
     await expect(repo.recordHint(team.id, 4 as never)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
 
-  it('cada tentativa registra o nível de dica disponível naquele momento', async () => {
+  it('hipótese inicial e tentativas registram o nível de dica disponível naquele momento', async () => {
     const { repo, team } = await joined();
-    await toHypothesis(repo, team.id);
-    await repo.submitAttempt(team.id, input('60'));
-    await repo.saveProgress(team.id, { phase: 'exploracao' });
+    await withHypothesis(repo, team.id, '60'); // hipótese inicial sem dicas
     await repo.recordHint(team.id, 1);
     await repo.recordHint(team.id, 2);
-    await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.submitAttempt(team.id, input('30'));
+    await revise(repo, team.id, '30');
     const t = (await repo.getTeam(team.id))!;
-    expect(t.attempts.map((a) => a.hintLevel)).toEqual([0, 2]);
-    expect(t.attempts.map((a) => a.correct)).toEqual([false, true]);
+    expect(t.hypothesis).toMatchObject({ answer: 60, hintLevel: 0, correct: false });
+    expect(t.attempts.map((a) => a.hintLevel)).toEqual([2]);
+    expect(t.attempts.map((a) => a.correct)).toEqual([true]);
+    expect(t.diagnostic?.hintLevel).toBe(0);
   });
 
   it('o status passa a "pediu dica" e depois "tentou"', async () => {
@@ -58,15 +57,17 @@ describe('fluxo das dicas', () => {
     await toHypothesis(repo, team.id);
     await repo.recordHint(team.id, 1);
     expect(deriveStatus((await repo.getTeam(team.id))!)).toBe('pediu_dica');
-    await repo.submitAttempt(team.id, input('30'));
+    await repo.submitHypothesis(team.id, input('30'));
     expect(deriveStatus((await repo.getTeam(team.id))!)).toBe('tentou');
   });
 
-  it('não existem dicas no problema final', async () => {
+  it('não existem dicas no problema final e a saída não registra dica', async () => {
     const { repo, team } = await joined();
-    await toHypothesis(repo, team.id);
-    await repo.submitAttempt(team.id, input('30'));
+    await withHypothesis(repo, team.id, '30');
+    await repo.recordHint(team.id, 1);
     await repo.saveProgress(team.id, { phase: 'saida' });
-    await expect(repo.recordHint(team.id, 1)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(repo.recordHint(team.id, 2)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await repo.submitExit(team.id, input('24'));
+    expect((await repo.getTeam(team.id))!.exit?.hintLevel).toBe(0);
   });
 });

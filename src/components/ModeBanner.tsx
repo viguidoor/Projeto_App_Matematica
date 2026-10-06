@@ -5,7 +5,7 @@ export function ModeBanner({ role }: { role: 'estudante' | 'professor' | 'projec
   if (repo.mode === 'connected') {
     return (
       <div className="mode-banner mode-connected" role="status">
-        <strong>CONECTADO</strong> — dados sincronizados com o servidor.
+        <strong>CONECTADO</strong> — dados sincronizados com o servidor; o acesso docente é verificado no servidor.
       </div>
     );
   }

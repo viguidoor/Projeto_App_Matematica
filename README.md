@@ -9,7 +9,7 @@ Protótipo (**Etapa 1**) da missão **O Jardim Geométrico** (área do losango) 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # testes (Vitest)
+npm test           # testes (Vitest): domínio, interface, acessibilidade e contrato do modo DEMONSTRAÇÃO
 npm run typecheck
 npm run build
 ```
@@ -37,6 +37,35 @@ Roteiro de ensaio:
 - **Diagonais iguais (D = d):** permitido. A tela explica que o losango vira um quadrado (caso particular), sem revelar a área; D nunca fica menor que d. Quando mais de um padrão de erro coincide com a resposta (ex.: 2 m × 2 m), o painel não rotula nenhum.
 - **Capturas de tablet (1024×768)** em `REVISAO_VISUAL/`. Para regerar: `npm run dev` e, em outro terminal, `node scripts/capturar-telas.cjs` (requer Playwright).
 - **Proposta da Etapa 2** em `docs/ETAPA2_ARQUITETURA.md` (nada implementado). Capturas atuais em `CAPTURAS_PRE_ETAPA2/` (tablet e desktop).
+
+## Etapa 2a: backend Supabase LOCAL (sem nuvem, sem serviços pagos)
+
+O aplicativo tem **dois repositórios de dados com o mesmo comportamento** (verificado por testes de contrato):
+
+| | Quando | Onde ficam os dados |
+|---|---|---|
+| `DemoRepository` (**DEMONSTRAÇÃO**, padrão) | ensaio e plano B da aula, sem rede | `localStorage` do navegador |
+| `SupabaseRepository` (**CONECTADO**) | vários tablets + painel em tempo real | Postgres + Auth + Realtime do Supabase |
+
+Nesta etapa o modo CONECTADO só roda contra uma stack **local** em Docker (Postgres, Auth/GoTrue, PostgREST, Realtime e um gateway nginx). **Nada foi implantado em nuvem.**
+
+```bash
+npm run db:up                      # sobe a stack local (gera infra/local/.env com segredos aleatórios, ignorado pelo git)
+npm run db:reset                   # aplica supabase/migrations/*.sql (apaga os dados locais)
+npm run test:supabase              # testes de segurança, contrato, robustez, tempo real, 35 entradas, paridade
+npm run db:down
+```
+
+Para usar o aplicativo contra a stack local, crie `.env.local` com `VITE_BACKEND=supabase`, `VITE_SUPABASE_URL=http://127.0.0.1:54321` e `VITE_SUPABASE_ANON_KEY=<ANON_KEY de infra/local/.env>` (chave **pública**); depois `npm run dev`. Contas de professor são criadas pelo dono do projeto (veja `docs/ETAPA2A_RELATORIO.md`). Sem essas variáveis o app abre em DEMONSTRAÇÃO.
+
+- `supabase/migrations/`: esquema, funções RPC, RLS/permissões e visões de análise (as mesmas para o local e para a Etapa 2b).
+- `docs/ETAPA2A_ESQUEMA.md`: esquema final (gerado do banco por `node infra/local/dump-schema.mjs`).
+- `docs/ETAPA2A_RELATORIO.md`: resultados, problemas encontrados e decisões pendentes.
+- Requisitos: Docker. Os testes `test:supabase` exigem a stack no ar; `npm test` (sem Docker) continua rodando a interface, o domínio e o contrato do modo DEMONSTRAÇÃO.
+
+### Percurso de dados (Etapa 2a)
+
+Missão 1 — Jardim Geométrico, em quatro etapas: **1 Diagnóstico → 2 Hipótese inicial → 3 Tentativas e revisões → 4 Problema final**. Cada uma é registrada separadamente (`submissions.kind`: `diagnostico`, `hipotese`, `tentativa`, `saida`), junto com o uso de dicas, o tempo aproximado (horários do servidor) e as intervenções do professor.
 
 ## Arquitetura
 

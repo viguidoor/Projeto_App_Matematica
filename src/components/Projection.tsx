@@ -1,24 +1,25 @@
 import { ModeBanner } from './ModeBanner';
-import { useSnapshot } from '../data/snapshot';
-import { buildDistribution, MIN_TEAMS_FOR_DISTRIBUTION } from '../domain/aggregate';
+import { useLiveData } from '../data/context';
+import { MIN_TEAMS_FOR_DISTRIBUTION } from '../domain/aggregate';
 import { formatNumber } from '../domain/area';
-import type { ProjectionStage } from '../domain/types';
+import type { ProjectionStage, ProjectionView } from '../domain/types';
 
 const STAGE_TITLE: Record<ProjectionStage, string> = {
   diagnostico: 'Diagnóstico: respostas da turma',
-  tentativa: 'Primeira tentativa: respostas da turma',
+  hipotese: 'Hipótese inicial: respostas da turma',
+  tentativa: 'Primeira revisão: respostas da turma',
   saida: 'Problema final: respostas da turma',
 };
 
 /** Tela para TV/projetor. Só recebe dados agregados ou um exemplo anônimo escolhido pelo professor. */
-export function Projection() {
-  const { teams, projection } = useSnapshot();
+export function Projection({ code }: { code?: string }) {
+  const projection = useLiveData<ProjectionView>((repo) => repo.getProjectionView(code), { kind: 'none' });
   let body;
 
   if (projection.kind === 'none') {
     body = <p className="proj-wait">Aguardando o professor escolher o que mostrar.</p>;
   } else if (projection.kind === 'distribution') {
-    const d = buildDistribution(teams, projection.stage);
+    const d = projection.distribution;
     body = (
       <>
         <h2>{STAGE_TITLE[projection.stage]}</h2>

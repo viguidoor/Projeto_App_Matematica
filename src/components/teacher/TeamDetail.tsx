@@ -26,13 +26,18 @@ function SubmissionView({ title, s, stage, onPreview }: { title: string; s: Subm
 export function TeamDetail({ team, onPreview }: { team: TeamRecord; onPreview: (r: PreviewRequest) => void }) {
   return (
     <div className="team-detail">
-      <h4>Registros de {team.alias} (diagnóstico, tentativas e saída ficam separados)</h4>
+      <h4>Registros de {team.alias} (diagnóstico → hipótese inicial → tentativas/revisões → saída ficam separados)</h4>
       <ul className="plain">
         {team.diagnostic ? <SubmissionView title="Diagnóstico (sem dicas)" s={team.diagnostic} stage="diagnostico" onPreview={onPreview} /> : <li>Diagnóstico: ainda não enviado.</li>}
+        {team.hypothesis ? (
+          <SubmissionView title={`Hipótese inicial (${team.hypothesis.hintLevel === 0 ? 'sem dicas' : `após dica ${team.hypothesis.hintLevel}`})`} s={team.hypothesis} stage="hipotese" onPreview={onPreview} />
+        ) : (
+          <li>Hipótese inicial: ainda não registrada.</li>
+        )}
         {team.attempts.map((a) => (
           <SubmissionView key={a.n} title={`Tentativa ${a.n} (${a.hintLevel === 0 ? 'sem dicas' : `após dica ${a.hintLevel}`})`} s={a} stage="tentativa" onPreview={onPreview} />
         ))}
-        {team.attempts.length === 0 && <li>Tentativas: nenhuma.</li>}
+        {team.hypothesis && team.attempts.length === 0 && <li>Tentativas/revisões: nenhuma.</li>}
         {team.exit ? <SubmissionView title="Saída (sem dicas)" s={team.exit} stage="saida" onPreview={onPreview} /> : <li>Saída: ainda não enviada.</li>}
       </ul>
       <p>Dicas abertas: {team.hints.length === 0 ? 'nenhuma' : team.hints.map((h) => h.level).join(', ')}.</p>

@@ -1,21 +1,14 @@
 import { useEffect, useState } from 'react';
+import { ConnectionStatus } from '../ConnectionStatus';
 import { ModeBanner } from '../ModeBanner';
 import { useRepository } from '../../data/context';
+import { missionStageText, stageOf } from '../../domain/stages';
 import { Done, Exit } from './finish';
 import { Intro, Join } from './entry';
 import { Diagnostic, Explore, Feedback, Hypothesis } from './mission';
-import type { StudentPhase, TeamRecord } from '../../domain/types';
+import type { TeamRecord } from '../../domain/types';
 
 const IDENTITY_KEY = 'operacao-area/student-team';
-
-const STEPS: Record<StudentPhase, { n: number; label: string }> = {
-  diagnostico: { n: 1, label: 'Diagnóstico' },
-  exploracao: { n: 2, label: 'Missão do Jardim' },
-  hipotese: { n: 2, label: 'Missão do Jardim' },
-  feedback: { n: 2, label: 'Missão do Jardim' },
-  saida: { n: 3, label: 'Problema final' },
-  concluido: { n: 3, label: 'Concluído' },
-};
 
 function readIdentity(): string | null {
   try {
@@ -52,8 +45,21 @@ export function StudentApp() {
         if (t) setTeam(t);
         else writeIdentity(null);
       })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [repo]);
+
+  // Percebe, por exemplo, que o professor encerrou a sessão.
+  const teamId = team?.id;
+  useEffect(() => {
+    if (!teamId) return;
+    return repo.subscribe(
+      () => {
+        repo.getTeam(teamId).then((t) => t && setTeam(t)).catch(() => {});
+      },
+      { intervalMs: 15000 },
+    );
+  }, [repo, teamId]);
 
   const adopt = (t: TeamRecord) => {
     writeIdentity(t.id);
@@ -75,7 +81,6 @@ export function StudentApp() {
     }
   }
 
-  const step = team ? STEPS[team.phase] : null;
   return (
     <div className="app">
       <a className="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -84,11 +89,17 @@ export function StudentApp() {
         {team && (
           <p className="team-chip">
             Equipe: <strong>{team.alias}</strong>
-            {step && <span className="step"> · Etapa {step.n} de 3: {step.label}</span>}
           </p>
         )}
+        {team && <p className="mission-stage">{missionStageText(stageOf(team))}</p>}
       </header>
       <ModeBanner role="estudante" />
+      <ConnectionStatus />
+      {team?.sessionClosed && (
+        <div className="feedback feedback-retry" role="alert">
+          <strong>A sessão foi encerrada pelo professor.</strong> Não é mais possível enviar respostas. Aguardem as orientações.
+        </div>
+      )}
       <main id="conteudo">{body}</main>
     </div>
   );

@@ -1,4 +1,5 @@
 import { formatNumber, MAX_ANSWER, parseDecimal, rhombusArea, sameNumber } from './area';
+import { containsPersonalData, PERSONAL_DATA_MESSAGE } from './pii';
 import type { PatternId, SubmissionInput, Unit } from './types';
 
 export interface PatternInfo {
@@ -85,6 +86,7 @@ export function validateSubmissionInput(input: SubmissionInput): SubmissionCheck
 
   if (calculation.length < LIMITS.calculationMin) errors.calculation = 'Registrem o cálculo da equipe (ex.: 3 × 4).';
   else if (calculation.length > LIMITS.calculationMax) errors.calculation = `O cálculo pode ter até ${LIMITS.calculationMax} caracteres.`;
+  else if (containsPersonalData(calculation)) errors.calculation = PERSONAL_DATA_MESSAGE;
 
   const parsed = parseDecimal(input.rawAnswer);
   let answer = 0;
@@ -99,6 +101,8 @@ export function validateSubmissionInput(input: SubmissionInput): SubmissionCheck
     errors.justification = `Expliquem em uma frase como pensaram (mínimo ${LIMITS.justificationMin} caracteres).`;
   } else if (justification.length > LIMITS.justificationMax) {
     errors.justification = `A justificativa pode ter até ${LIMITS.justificationMax} caracteres.`;
+  } else if (containsPersonalData(justification)) {
+    errors.justification = PERSONAL_DATA_MESSAGE;
   }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };

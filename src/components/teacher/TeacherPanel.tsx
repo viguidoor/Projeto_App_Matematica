@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { ConnectionStatus } from '../ConnectionStatus';
 import { ModeBanner } from '../ModeBanner';
 import { ScreenHeading } from '../ScreenHeading';
 import { useRepository } from '../../data/context';
@@ -6,7 +7,7 @@ import { useSnapshot } from '../../data/snapshot';
 import { countPatterns } from '../../domain/aggregate';
 import { PATTERNS } from '../../domain/evaluate';
 import { STATUS_ICON, STATUS_LABEL, deriveStatus, maxHintLevel } from '../../domain/status';
-import type { Session, TeamStatus, TeamRecord } from '../../domain/types';
+import type { Session, Submission, TeamStatus } from '../../domain/types';
 import { ExamplePreview, type PreviewRequest } from './ExamplePreview';
 import { ExportButtons } from './ExportButtons';
 import { Notes } from './Notes';
@@ -25,13 +26,70 @@ function sessionLabel(s: Session | null, now = Date.now()): string {
   return `Sessão aberta · código válido até ${timeOf(s.expiresAt)}`;
 }
 
-function lastAnswer(t: TeamRecord): string {
-  const a = t.attempts[t.attempts.length - 1];
-  return a ? `${formatNumber(a.answer)} ${a.unit} ${a.correct ? '✔' : '✎'}` : '—';
+function answerCell(s: Submission | null): string {
+  return s ? `${formatNumber(s.answer)} ${s.unit} ${s.correct ? '✔' : '✎'}` : '—';
+}
+
+function LoginForm({ onDone }: { onDone: () => void }) {
+  const repo = useRepository();
+  const uid = useId();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!email.trim() || !password) return setError('Digite o e-mail e a senha da conta docente.');
+    setBusy(true);
+    try {
+      await repo.teacherAuth!.signIn(email.trim(), password);
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível entrar.');
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="answer-form login-form" onSubmit={submit} noValidate aria-label="Login do professor">
+      <div className="field">
+        <label htmlFor={`${uid}-e`}>E-mail da conta docente</label>
+        <input id={`${uid}-e`} className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor={`${uid}-p`}>Senha</label>
+        <input id={`${uid}-p`} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </div>
+      <p className="field-error" role="alert">{error}</p>
+      <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Entrando…' : 'Entrar como professor'}</button>
+    </form>
+  );
 }
 
 export function TeacherPanel() {
+  const repo = useRepository();
   const [entered, setEntered] = useState(false);
+  const [checking, setChecking] = useState(!!repo.teacherAuth);
+  const needsLogin = !!repo.teacherAuth;
+
+  useEffect(() => {
+    if (!repo.teacherAuth) return;
+    repo.teacherAuth.isSignedIn().then((ok) => setEntered(ok)).catch(() => {}).finally(() => setChecking(false));
+  }, [repo]);
+
+  if (checking) return <p role="status">Carregando…</p>;
+  if (needsLogin && !entered) {
+    return (
+      <div className="app app-wide">
+        <ModeBanner role="professor" />
+        <main id="conteudo">
+          <ScreenHeading>Painel do professor</ScreenHeading>
+          <p className="lead">Entre com a conta docente. O acesso é verificado no servidor.</p>
+          <LoginForm onDone={() => setEntered(true)} />
+        </main>
+      </div>
+    );
+  }
   if (!entered) {
     return (
       <div className="app app-wide">
@@ -74,6 +132,7 @@ function Dashboard() {
     <div className="app app-wide">
       <a className="skip-link" href="#conteudo">Pular para o conteúdo</a>
       <ModeBanner role="professor" />
+      <ConnectionStatus />
       <main id="conteudo">
         <ScreenHeading>Painel do professor</ScreenHeading>
 
@@ -89,6 +148,20 @@ function Dashboard() {
             </button>
             {session && isOpen && (
               <button type="button" className="btn" onClick={() => run(() => repo.closeSession(session.code))}>Encerrar sessão</button>
+            )}
+            {session && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (window.confirm('Apagar esta sessão e todos os dados dela (equipes, respostas, notas)? Não dá para desfazer.')) {
+                    setPreview(null);
+                    run(() => repo.deleteSession(session.code));
+                  }
+                }}
+              >
+                Apagar esta sessão e seus dados
+              </button>
             )}
             <a className="btn" href="#/" target="_blank" rel="noopener noreferrer">Abrir tela do estudante (nova aba)</a>
           </div>
@@ -120,7 +193,7 @@ function Dashboard() {
               <table>
                 <caption className="sr-only">Equipes, estados e respostas</caption>
                 <thead>
-                  <tr><th scope="col">Equipe</th><th scope="col">Estado</th><th scope="col">Diagnóstico</th><th scope="col">Tentativas</th><th scope="col">Dicas</th><th scope="col">Última tentativa</th><th scope="col">Saída</th><th scope="col">Detalhes</th></tr>
+                  <tr><th scope="col">Equipe</th><th scope="col">Estado</th><th scope="col">Diagnóstico</th><th scope="col">Hipótese inicial</th><th scope="col">Revisões</th><th scope="col">Dicas</th><th scope="col">Saída</th><th scope="col">Detalhes</th></tr>
                 </thead>
                 <tbody>
                   {teams.map((t) => {
@@ -130,11 +203,11 @@ function Dashboard() {
                       <FragmentRows key={t.id} expanded={expanded} detail={<TeamDetail team={t} onPreview={setPreview} />}>
                         <th scope="row">{t.alias}{t.fictitious && <span className="tag">fictícia</span>}</th>
                         <td><span aria-hidden="true">{STATUS_ICON[st]}</span> {STATUS_LABEL[st]}</td>
-                        <td>{t.diagnostic ? `${formatNumber(t.diagnostic.answer)} ${t.diagnostic.unit} ${t.diagnostic.correct ? '✔' : '✎'}` : '—'}</td>
-                        <td>{t.attempts.length}</td>
+                        <td>{answerCell(t.diagnostic)}</td>
+                        <td>{answerCell(t.hypothesis)}</td>
+                        <td>{t.attempts.length}{t.attempts.length > 0 && ` (última: ${answerCell(t.attempts[t.attempts.length - 1])})`}</td>
                         <td>{maxHintLevel(t)} de 3</td>
-                        <td>{lastAnswer(t)}</td>
-                        <td>{t.exit ? `${formatNumber(t.exit.answer)} ${t.exit.unit} ${t.exit.correct ? '✔' : '✎'}` : '—'}</td>
+                        <td>{answerCell(t.exit)}</td>
                         <td>
                           <button type="button" className="btn btn-small" aria-expanded={expanded} onClick={() => setOpenId(expanded ? null : t.id)}>
                             {expanded ? 'Ocultar' : 'Ver'}<span className="sr-only"> detalhes de {t.alias}</span>
@@ -179,7 +252,7 @@ function Dashboard() {
           )}
         </section>
 
-        <ProjectionControls projection={projection} />
+        <ProjectionControls projection={projection} sessionCode={session?.code} />
         <Notes session={session} teams={teams} notes={notes} />
         <ExportButtons teams={teams} />
       </main>
@@ -192,7 +265,7 @@ function FragmentRows({ children, expanded, detail }: { children: React.ReactNod
     <>
       <tr>{children}</tr>
       {expanded && (
-        <tr className="detail-row"><td colSpan={8}>{detail}</td></tr>
+        <tr className="detail-row"><td colSpan={9}>{detail}</td></tr>
       )}
     </>
   );

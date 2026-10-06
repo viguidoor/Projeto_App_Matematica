@@ -6,6 +6,7 @@ import { Projection } from '../src/components/Projection';
 import { StudentApp } from '../src/components/student/StudentApp';
 import { TeacherPanel } from '../src/components/teacher/TeacherPanel';
 import { RepositoryProvider } from '../src/data/context';
+import { RepositoryError } from '../src/data/repository';
 import { makeRepo } from './helpers';
 
 type Repo = ReturnType<typeof makeRepo>['repo'];
@@ -75,7 +76,7 @@ describe('diagonais iguais (quadrado)', () => {
     await enter(user, code);
     await fillForm(user, { calc: '8 x 5 : 2', answer: '20', unit: 'm²', why: 'Metade do produto.' });
     await submit(user, /Enviar diagnóstico/);
-    await screen.findByRole('heading', { name: /Missão 1/ });
+    await screen.findByRole('heading', { name: /Hipótese inicial: explorem o jardim/ });
     return { user, repo, view };
   }
 
@@ -117,15 +118,15 @@ describe('diagonais iguais (quadrado)', () => {
     const minor = screen.getByLabelText('Diagonal menor (d)');
     await user.clear(minor);
     await user.type(minor, '10');
-    await user.click(screen.getByRole('button', { name: /Registrar hipótese com D = 10 m e d = 10 m/ }));
-    await screen.findByRole('heading', { name: 'Hipótese da equipe' });
+    await user.click(screen.getByRole('button', { name: /Registrar hipótese inicial com D = 10 m e d = 10 m/ }));
+    await screen.findByRole('heading', { name: 'Hipótese inicial da equipe' });
     expect(screen.getByRole('complementary', { name: /Diagonais iguais/ })).toBeInTheDocument();
     await fillForm(user, { calc: '10 x 10 : 2', answer: '50', unit: 'm²', why: 'O quadrado tem diagonais iguais.' });
-    await submit(user, /Enviar hipótese/);
-    await screen.findByRole('heading', { name: /Devolutiva da tentativa 1/ });
+    await submit(user, /Enviar hipótese inicial/);
+    await screen.findByRole('heading', { name: 'Devolutiva da hipótese inicial' });
     expect(screen.getByText(/a área do jardim é 50 m²/)).toBeInTheDocument();
     const [team] = await repo.listTeams((await repo.getCurrentSession())!.code);
-    expect(team.attempts[0]).toMatchObject({ major: 10, minor: 10, answer: 50, correct: true });
+    expect(team.hypothesis).toMatchObject({ major: 10, minor: 10, answer: 50, correct: true });
   });
 });
 
@@ -149,7 +150,7 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     expect(screen.getByText(/Não usem nome completo/)).toBeInTheDocument();
   });
 
-  it('percorre diagnóstico → exploração → hipótese → dica → nova tentativa → saída, sem revelar a área antes', async () => {
+  it('percorre as 4 etapas: diagnóstico → hipótese inicial → tentativas/revisões → saída, sem revelar a área antes', async () => {
     const { repo } = makeRepo();
     const { code } = await repo.openSession();
     const user = userEvent.setup();
@@ -160,7 +161,7 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     expect(screen.queryByRole('button', { name: /dica/i })).not.toBeInTheDocument();
     await fillForm(user, { calc: '8 x 5', answer: '40', unit: 'm²', why: 'Multipliquei as diagonais.' });
     await submit(user, /Enviar diagnóstico/);
-    await screen.findByRole('heading', { name: /Missão 1/ });
+    await screen.findByRole('heading', { name: /Hipótese inicial: explorem o jardim/ });
     expect(screen.queryByText(/não confere|Confere/i)).not.toBeInTheDocument();
 
     // Exploração: nenhuma área calculada aparece; controles equivalentes
@@ -193,35 +194,44 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
 
     expect(await axe(container)).toHaveNoViolations();
 
-    await user.click(screen.getByRole('button', { name: /Registrar hipótese com D = 10 m e d = 6 m/ }));
-    await screen.findByRole('heading', { name: 'Hipótese da equipe' });
+    expect(screen.getByText(/Missão 1 — Jardim Geométrico · Etapa 2\/4 · Hipótese inicial/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Registrar hipótese inicial com D = 10 m e d = 6 m/ }));
+    await screen.findByRole('heading', { name: 'Hipótese inicial da equipe' });
     expect(screen.queryByText(/30\s*m²/)).not.toBeInTheDocument();
 
-    // Tentativa 1: 60 m² (sem ÷2)
+    // Hipótese inicial: 60 m² (sem ÷2)
     await fillForm(user, { calc: '10 x 6', answer: '60', unit: 'm²', why: 'Área é base vezes altura.' });
-    await submit(user, /Enviar hipótese/);
-    await screen.findByRole('heading', { name: /Devolutiva da tentativa 1/ });
+    await submit(user, /Enviar hipótese inicial/);
+    await screen.findByRole('heading', { name: 'Devolutiva da hipótese inicial' });
+    expect(screen.getByText(/Etapa 2\/4 · Hipótese inicial/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations(); // acessibilidade também na devolutiva da hipótese inicial
     expect(screen.getByText(/Vocês multiplicaram as duas diagonais/)).toBeInTheDocument();
     expect(screen.queryByText(/30\s*m²/)).not.toBeInTheDocument(); // não entrega a resposta
 
-    // Dica 1, 2, 3 em ordem
+    // Dicas 1 e 2: cada uma só aparece depois de pedida
+    expect(screen.queryByText(/Dica 1: identifiquem/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Pedir a dica 1 de 3/ }));
     expect(screen.getByText(/Dica 1: identifiquem as diagonais/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dica 2: pensem/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Pedir a dica 2 de 3/ }));
     expect(screen.getByText(/Dica 2: pensem em um retângulo/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dica 3: comparem/)).not.toBeInTheDocument();
 
-    // Nova tentativa → 30 m²
+    // Etapa 3: tentativa/revisão → 30 m²
     await user.click(screen.getByRole('button', { name: 'Nova tentativa' }));
-    await screen.findByRole('heading', { name: /Missão 1/ });
-    await user.click(screen.getByRole('button', { name: /Registrar hipótese/ }));
-    await fillForm(user, { calc: '10 x 6 : 2', answer: '30', unit: 'm²', why: 'O losango é metade do retângulo.' });
-    await submit(user, /Enviar hipótese/);
-    await screen.findByRole('heading', { name: /Devolutiva da tentativa 2/ });
+    await screen.findByRole('heading', { name: /Revisão: explorem o jardim de novo/ });
+    expect(screen.getByText(/Missão 1 — Jardim Geométrico · Etapa 3\/4 · Tentativas e revisões/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Registrar nova tentativa/ }));
+    await screen.findByRole('heading', { name: 'Tentativa 1 da equipe' });
+    await fillForm(user, { calc: '10 x 6 : 2', answer: '30', unit: 'm²', why: 'O losango é metade do retângulo que o envolve.' });
+    await submit(user, /Enviar tentativa/);
+    await screen.findByRole('heading', { name: 'Devolutiva da tentativa 1' });
     expect(screen.getByText(/a área do jardim é 30 m²/)).toBeInTheDocument();
 
-    // Saída: sem dicas e sem resultado antes do envio
+    // Etapa 4: saída sem dicas e sem resultado antes do envio
     await user.click(screen.getByRole('button', { name: 'Ir ao problema final' }));
     await screen.findByRole('heading', { name: 'Problema final' });
+    expect(screen.getByText(/Missão 1 — Jardim Geométrico · Etapa 4\/4 · Problema final/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Pedir a dica/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/24\s*m²/)).not.toBeInTheDocument();
     await fillForm(user, { calc: '12 x 4 : 2', answer: '24', unit: 'm²', why: 'Metade de 12 vezes 4.' });
@@ -229,10 +239,11 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     await screen.findByRole('heading', { name: 'Missão concluída' });
     expect(screen.getByText(/A área do canteiro é 24 m²/)).toBeInTheDocument();
 
-    // O repositório guardou tudo separado
+    // O repositório guardou tudo separado: diagnóstico → hipótese inicial → revisões → saída
     const [team] = await repo.listTeams(code);
     expect(team.diagnostic?.answer).toBe(40);
-    expect(team.attempts.map((a) => [a.answer, a.hintLevel])).toEqual([[60, 0], [30, 2]]);
+    expect(team.hypothesis).toMatchObject({ answer: 60, hintLevel: 0 });
+    expect(team.attempts.map((a) => [a.answer, a.hintLevel])).toEqual([[30, 2]]);
     expect(team.exit?.answer).toBe(24);
   });
 
@@ -244,11 +255,12 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     await enter(user, code);
     await fillForm(user, { calc: '8 x 5 : 2', answer: '20', unit: 'm²', why: 'Metade do produto.' });
     await submit(user, /Enviar diagnóstico/);
-    await screen.findByRole('heading', { name: /Missão 1/ });
+    await screen.findByRole('heading', { name: /Hipótese inicial: explorem o jardim/ });
     first.unmount();
 
     render(wrap(repo, <StudentApp />));
-    expect(await screen.findByRole('heading', { name: /Missão 1/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Hipótese inicial: explorem o jardim/ })).toBeInTheDocument();
+    expect(screen.getByText(/Etapa 2\/4 · Hipótese inicial/)).toBeInTheDocument();
     expect(screen.getByText(/Equipe Ipê/)).toBeInTheDocument();
   });
 
@@ -261,7 +273,73 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     await repo.closeSession(code);
     await fillForm(user, { calc: '8 x 5 : 2', answer: '20', unit: 'm²', why: 'Metade do produto.' });
     await submit(user, /Enviar diagnóstico/);
-    expect(await screen.findByText(/sessão foi encerrada/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/sessão foi encerrada/)).length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText(/Não é mais possível enviar respostas/)).toBeInTheDocument(); // aviso na tela, mesmo sem novo envio
+  });
+});
+
+describe('limite de entradas do serviço de login (mesma rede/IP)', () => {
+  it('mostra uma mensagem clara, mantém o formulário preenchido e permite tentar de novo', async () => {
+    const { repo } = makeRepo();
+    const { code } = await repo.openSession();
+    let blocked = true;
+    const limited = Object.assign(Object.create(repo), {
+      joinSession: async (c: string, a: string) => {
+        if (blocked) throw new RepositoryError('RATE_LIMITED', 'Muitas equipes entraram ao mesmo tempo pela mesma rede. Aguardem alguns minutos e tentem de novo, ou chamem o professor.');
+        return repo.joinSession(c, a);
+      },
+    }) as Repo;
+    const user = userEvent.setup();
+    const { container } = render(wrap(limited, <StudentApp />));
+    await user.click(screen.getByRole('button', { name: 'Começar' }));
+    await user.type(screen.getByLabelText('Código da sessão'), code);
+    await user.type(screen.getByLabelText('Apelido da equipe'), 'Equipe Ipê');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+    expect(await screen.findByText(/pela mesma rede/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Código da sessão')).toHaveValue(code);
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
+    expect(await axe(container)).toHaveNoViolations();
+    blocked = false;
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+    await screen.findByRole('heading', { name: 'Questão diagnóstica' });
+  });
+});
+
+describe('login docente (repositório conectado)', () => {
+  it('exige login, mostra erro compreensível, é acessível e abre o painel depois de entrar', async () => {
+    const { repo } = makeRepo();
+    let signedIn = false;
+    const calls: string[] = [];
+    const connected = Object.assign(Object.create(repo), {
+      teacherAuth: {
+        isSignedIn: async () => signedIn,
+        signIn: async (email: string, password: string) => {
+          calls.push(email);
+          if (password !== 'certa') throw new Error('E-mail ou senha incorretos.');
+          signedIn = true;
+        },
+        signOut: async () => {
+          signedIn = false;
+        },
+      },
+    }) as Repo;
+    const user = userEvent.setup();
+    const { container } = render(wrap(connected, <TeacherPanel />));
+    expect(await screen.findByRole('form', { name: 'Login do professor' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Abrir sessão' })).not.toBeInTheDocument(); // sem login, nada do painel
+    expect(await axe(container)).toHaveNoViolations();
+
+    await user.click(screen.getByRole('button', { name: 'Entrar como professor' }));
+    expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toMatch(/Digite o e-mail e a senha/);
+    await user.type(screen.getByLabelText('E-mail da conta docente'), 'prof@escola.test');
+    await user.type(screen.getByLabelText('Senha'), 'errada');
+    await user.click(screen.getByRole('button', { name: 'Entrar como professor' }));
+    expect(await screen.findByText('E-mail ou senha incorretos.')).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Senha'));
+    await user.type(screen.getByLabelText('Senha'), 'certa');
+    await user.click(screen.getByRole('button', { name: 'Entrar como professor' }));
+    expect(await screen.findByRole('button', { name: 'Abrir sessão' })).toBeInTheDocument();
+    expect(calls).toEqual(['prof@escola.test', 'prof@escola.test']);
   });
 });
 
@@ -343,7 +421,7 @@ describe('painel do professor e projeção (DEMONSTRAÇÃO)', () => {
       calculation: '8 x 5',
       rawAnswer: '40',
       unit: 'm²',
-      justification: 'Eu, Maria Souza, multipliquei e a equipe Ipê chamou 99999-1234 no zap.',
+      justification: 'Eu, Maria Souza, multipliquei e a equipe Ipê chamou no zap.',
     });
     const { container } = render(wrap(repo, <TeacherPanel />));
     await user.click(screen.getByRole('button', { name: 'Entrar na demonstração' }));
@@ -352,7 +430,7 @@ describe('painel do professor e projeção (DEMONSTRAÇÃO)', () => {
 
     const box = (await screen.findByText(/é exatamente isto que a turma verá/)).closest('.preview-box') as HTMLElement;
     expect(box).toHaveTextContent('[oculto]');
-    expect(box).not.toHaveTextContent(/Maria|Souza|99999|Ipê/);
+    expect(box).not.toHaveTextContent(/Maria|Souza|Ipê/);
     expect(await axe(container)).toHaveNoViolations();
 
     // o professor pode ocultar uma palavra a mais e retirar a justificativa por completo
@@ -365,7 +443,7 @@ describe('painel do professor e projeção (DEMONSTRAÇÃO)', () => {
 
     await waitFor(async () => expect((await repo.getProjection()).kind).toBe('example'));
     const proj = await repo.getProjection();
-    expect(JSON.stringify(proj)).not.toMatch(/Maria|Souza|99999|Ipê|multipliquei/);
+    expect(JSON.stringify(proj)).not.toMatch(/Maria|Souza|Ipê|multipliquei/);
     expect(proj.kind === 'example' && proj.example.justification).toBe('');
   });
 

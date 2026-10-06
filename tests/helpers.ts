@@ -34,3 +34,16 @@ export async function toHypothesis(repo: ReturnType<typeof makeRepo>['repo'], te
   await repo.submitDiagnostic(teamId, input(diagnostic));
   await repo.saveProgress(teamId, { phase: 'hipotese' });
 }
+
+/** Leva a equipe até a devolutiva da hipótese inicial (diagnóstico, exploração e hipótese enviada). */
+export async function withHypothesis(repo: ReturnType<typeof makeRepo>['repo'], teamId: string, answer = '60', diagnostic = '20') {
+  await toHypothesis(repo, teamId, diagnostic);
+  await repo.submitHypothesis(teamId, input(answer));
+}
+
+/** Faz uma revisão (volta à exploração, abre o formulário e envia uma tentativa). */
+export async function revise(repo: ReturnType<typeof makeRepo>['repo'], teamId: string, answer: string) {
+  await repo.saveProgress(teamId, { phase: 'exploracao' });
+  await repo.saveProgress(teamId, { phase: 'hipotese' });
+  return repo.submitAttempt(teamId, input(answer));
+}

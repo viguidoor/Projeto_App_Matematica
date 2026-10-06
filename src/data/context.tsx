@@ -14,7 +14,7 @@ export function useRepository(): SessionRepository {
 }
 
 /** Executa `load` agora e a cada mudança de dados (outra aba do mesmo navegador, em DEMONSTRAÇÃO). */
-export function useLiveData<T>(load: (repo: SessionRepository) => Promise<T>, initial: T): T {
+export function useLiveData<T>(load: (repo: SessionRepository) => Promise<T>, initial: T, options?: { intervalMs?: number }): T {
   const repo = useRepository();
   const [value, setValue] = useState<T>(initial);
   useEffect(() => {
@@ -23,7 +23,7 @@ export function useLiveData<T>(load: (repo: SessionRepository) => Promise<T>, in
       load(repo).then((v) => alive && setValue(v));
     };
     run();
-    const off = repo.subscribe(run);
+    const off = repo.subscribe(run, options);
     return () => {
       alive = false;
       off();

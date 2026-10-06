@@ -10,10 +10,19 @@ interface Props {
   onSubmit: (input: SubmissionInput) => Promise<void>;
 }
 
-const ORDER: (keyof SubmissionInput)[] = ['calculation', 'rawAnswer', 'unit', 'justification'];
+function newRequestId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `req-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e12).toString(36)}`;
+}
+
+type FieldKey = 'calculation' | 'rawAnswer' | 'unit' | 'justification';
+const ORDER: FieldKey[] = ['calculation', 'rawAnswer', 'unit', 'justification'];
 
 export function AnswerForm({ legend, submitLabel, calculationHelp = 'Escrevam as contas como fariam no caderno.', onSubmit }: Props) {
   const uid = useId();
+  // Mesmo identificador em reenvios do mesmo formulário: repetir o envio não duplica o registro.
+  const requestId = useRef(newRequestId());
   const [values, setValues] = useState<SubmissionInput>({ calculation: '', rawAnswer: '', unit: '', justification: '' });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState('');
@@ -25,7 +34,7 @@ export function AnswerForm({ legend, submitLabel, calculationHelp = 'Escrevam as
     justification: useRef<HTMLTextAreaElement>(null),
   };
 
-  const set = <K extends keyof SubmissionInput>(key: K, value: SubmissionInput[K]) => {
+  const set = <K extends FieldKey>(key: K, value: SubmissionInput[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   };
@@ -43,14 +52,14 @@ export function AnswerForm({ legend, submitLabel, calculationHelp = 'Escrevam as
     setErrors({});
     setBusy(true);
     try {
-      await onSubmit(values);
+      await onSubmit({ ...values, requestId: requestId.current });
     } catch (err) {
       setServerError(err instanceof RepositoryError ? err.message : 'Não foi possível enviar. Tentem de novo.');
       setBusy(false);
     }
   };
 
-  const err = (k: keyof SubmissionInput) => (errors[k] ? `${uid}-${k}-err` : undefined);
+  const err = (k: FieldKey) => (errors[k] ? `${uid}-${k}-err` : undefined);
 
   return (
     <form className="answer-form" onSubmit={submit} noValidate aria-label={legend}>

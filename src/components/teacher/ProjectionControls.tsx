@@ -3,11 +3,12 @@ import type { Projection, ProjectionStage } from '../../domain/types';
 
 const STAGES: { stage: ProjectionStage; label: string }[] = [
   { stage: 'diagnostico', label: 'Diagnóstico' },
-  { stage: 'tentativa', label: '1ª tentativa' },
+  { stage: 'hipotese', label: 'Hipótese inicial' },
+  { stage: 'tentativa', label: '1ª revisão' },
   { stage: 'saida', label: 'Saída' },
 ];
 
-export function ProjectionControls({ projection }: { projection: Projection }) {
+export function ProjectionControls({ projection, sessionCode }: { projection: Projection; sessionCode?: string }) {
   const repo = useRepository();
   const showCorrect = projection.kind !== 'none' && projection.showCorrect;
   const current =
@@ -33,7 +34,7 @@ export function ProjectionControls({ projection }: { projection: Projection }) {
           onChange={(e) => repo.setProjection({ ...projection, showCorrect: e.target.checked } as Projection)} />
         <span>Mostrar na projeção qual resposta confere</span>
       </label>
-      <p><a className="btn" href="#/projecao" target="_blank" rel="noopener noreferrer">Abrir tela de projeção (nova janela)</a></p>
+      <p><a className="btn" href={sessionCode ? `#/projecao?codigo=${sessionCode}` : '#/projecao'} target="_blank" rel="noopener noreferrer">Abrir tela de projeção (nova janela)</a></p>
     </section>
   );
 }

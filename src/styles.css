@@ -97,4 +97,8 @@ thead th { background: #dde6f0; }
 .redact-reason { font-size: .75rem; }
 .preview-box { border: 3px solid var(--primary); border-radius: .6rem; padding: .5rem 1rem; background: #fff; margin: .75rem 0; }
 .preview-label { font-size: .85rem; font-weight: 700; color: var(--primary); margin: .25rem 0; }
+.mission-stage { margin: 0; font-weight: 700; color: var(--fg); flex-basis: 100%; }
+.connection { margin: .25rem 0; font-size: .9rem; font-weight: 700; }
+.connection-offline, .connection-reconnecting { color: var(--err); }
+.login-form { max-width: 28rem; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
