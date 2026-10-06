@@ -132,13 +132,19 @@ function Dashboard() {
     <div className="app app-wide">
       <a className="skip-link" href="#conteudo">Pular para o conteúdo</a>
       <ModeBanner role="professor" />
-      <ConnectionStatus />
+      <ConnectionStatus audience="teacher" />
       <main id="conteudo">
         <ScreenHeading>Painel do professor</ScreenHeading>
 
         <section className="card" aria-labelledby="sess">
           <h3 id="sess">Sessão</h3>
           <p>{sessionLabel(session)}</p>
+          {session?.retentionUntil && (
+            <p className="help">
+              Os dados brutos desta sessão serão apagados automaticamente em {new Date(session.retentionUntil).toLocaleDateString('pt-BR')} (30 dias).
+              A <strong>exportação anônima</strong> (mais abaixo) é o registro que fica com você: baixe-a antes dessa data.
+            </p>
+          )}
           {session && isOpen && (
             <p>Código para os estudantes: <strong className="session-code" aria-label={`Código ${session.code.split('').join(' ')}`}>{session.code}</strong></p>
           )}
@@ -154,7 +160,7 @@ function Dashboard() {
                 type="button"
                 className="btn"
                 onClick={() => {
-                  if (window.confirm('Apagar esta sessão e todos os dados dela (equipes, respostas, notas)? Não dá para desfazer.')) {
+                  if (window.confirm('Apagar esta sessão e todos os dados dela (equipes, respostas, notas)? Não dá para desfazer. Você já baixou a exportação anônima?')) {
                     setPreview(null);
                     run(() => repo.deleteSession(session.code));
                   }

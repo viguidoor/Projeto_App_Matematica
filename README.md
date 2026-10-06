@@ -63,6 +63,10 @@ Para usar o aplicativo contra a stack local, crie `.env.local` com `VITE_BACKEND
 - `docs/ETAPA2A_RELATORIO.md`: resultados, problemas encontrados e decisões pendentes.
 - Requisitos: Docker. Os testes `test:supabase` exigem a stack no ar; `npm test` (sem Docker) continua rodando a interface, o domínio e o contrato do modo DEMONSTRAÇÃO.
 
+### Testes ponta a ponta (Etapa 2a.1)
+
+`npm run db:up` e depois `npm run test:e2e`: Playwright (Chromium, tablet) abre o aplicativo real contra o Supabase local, com professor, estudantes e projeção em contextos independentes. `npm run test:all` roda tudo. Relatório: `docs/ETAPA2A1_RELATORIO.md`; roteiro da nuvem (não iniciada): `docs/ETAPA2B_PREPARACAO.md`.
+
 ### Percurso de dados (Etapa 2a)
 
 Missão 1 — Jardim Geométrico, em quatro etapas: **1 Diagnóstico → 2 Hipótese inicial → 3 Tentativas e revisões → 4 Problema final**. Cada uma é registrada separadamente (`submissions.kind`: `diagnostico`, `hipotese`, `tentativa`, `saida`), junto com o uso de dicas, o tempo aproximado (horários do servidor) e as intervenções do professor.

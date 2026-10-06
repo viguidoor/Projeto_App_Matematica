@@ -22,6 +22,7 @@ import { RepositoryError, type ProgressPatch, type SessionRepository } from './r
 
 const STORAGE_KEY = 'operacao-area/demo/v2';
 const SESSION_DURATION_MS = 90 * 60 * 1000;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 interface DemoState {
@@ -125,7 +126,7 @@ export class DemoRepository implements SessionRepository {
     return this.mutate((state) => {
       const openedAt = this.now();
       if (state.session) state.pastCodes.push(state.session.code);
-      const session: Session = { code: this.newCode(), openedAt, expiresAt: openedAt + SESSION_DURATION_MS, closedAt: null };
+      const session: Session = { code: this.newCode(), openedAt, expiresAt: openedAt + SESSION_DURATION_MS, closedAt: null, retentionUntil: openedAt + RETENTION_MS };
       state.session = session;
       state.projection = { kind: 'none' };
       return session;
@@ -332,7 +333,8 @@ export class DemoRepository implements SessionRepository {
     return this.mutate((state) => {
       const team = this.teamOrThrow(state, teamId);
       this.assertSessionActive(state, team);
-      if (!team.diagnostic) throw new RepositoryError('INVALID_STATE', 'As dicas só ficam disponíveis depois do diagnóstico.');
+      // Dicas ficam bloqueadas até o envio da hipótese inicial (a hipótese é sempre feita sem dicas).
+      if (!team.hypothesis) throw new RepositoryError('INVALID_STATE', 'As dicas ficam disponíveis depois que a equipe registrar a hipótese inicial.');
       if (team.exit || team.phase === 'saida' || team.phase === 'concluido') {
         throw new RepositoryError('INVALID_STATE', 'O problema final é resolvido sem dicas.');
       }

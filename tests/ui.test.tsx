@@ -195,8 +195,13 @@ describe('jornada do estudante (modo DEMONSTRAÇÃO)', () => {
     expect(await axe(container)).toHaveNoViolations();
 
     expect(screen.getByText(/Missão 1 — Jardim Geométrico · Etapa 2\/4 · Hipótese inicial/)).toBeInTheDocument();
+    // Dicas bloqueadas até o envio da hipótese inicial (na exploração e no formulário da hipótese)
+    expect(screen.queryByRole('button', { name: /Pedir a dica/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/As dicas ficam disponíveis depois que a equipe registrar a hipótese inicial/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Registrar hipótese inicial com D = 10 m e d = 6 m/ }));
     await screen.findByRole('heading', { name: 'Hipótese inicial da equipe' });
+    expect(screen.queryByRole('button', { name: /Pedir a dica/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/As dicas ficam disponíveis depois que a equipe registrar a hipótese inicial/)).toBeInTheDocument();
     expect(screen.queryByText(/30\s*m²/)).not.toBeInTheDocument();
 
     // Hipótese inicial: 60 m² (sem ÷2)
@@ -305,6 +310,31 @@ describe('limite de entradas do serviço de login (mesma rede/IP)', () => {
   });
 });
 
+describe('orientação ao professor quando a conexão cai', () => {
+  it('mostra o estado em texto e como verificar se o Supabase está ativo; o estudante vê a mensagem combinada', async () => {
+    const { repo } = makeRepo();
+    let state: 'connected' | 'reconnecting' | 'offline' = 'offline';
+    const listeners = new Set<() => void>();
+    const connected = Object.assign(Object.create(repo), {
+      connection: { get: () => state, subscribe: (l: () => void) => (listeners.add(l), () => listeners.delete(l)) },
+    }) as Repo;
+    const user = userEvent.setup();
+    const teacherView = render(wrap(connected, <TeacherPanel />));
+    await user.click(screen.getByRole('button', { name: 'Entrar na demonstração' }));
+    expect(await screen.findByText(/projeto do Supabase está ativo/)).toBeInTheDocument();
+    expect(screen.getByText(/pausado depois de 1 semana sem uso/)).toBeInTheDocument();
+    state = 'connected';
+    listeners.forEach((l) => l());
+    await waitFor(() => expect(screen.queryByText(/projeto do Supabase está ativo/)).not.toBeInTheDocument());
+    teacherView.unmount();
+
+    state = 'offline';
+    render(wrap(connected, <StudentApp />));
+    expect(await screen.findByText(/Não foi possível conectar ao servidor\. Verifique a conexão e avise o professor\./)).toBeInTheDocument();
+    expect(screen.queryByText(/projeto do Supabase/)).not.toBeInTheDocument(); // o estudante não vê orientação técnica
+  });
+});
+
 describe('login docente (repositório conectado)', () => {
   it('exige login, mostra erro compreensível, é acessível e abre o painel depois de entrar', async () => {
     const { repo } = makeRepo();
@@ -410,6 +440,20 @@ describe('painel do professor e projeção (DEMONSTRAÇÃO)', () => {
     await waitFor(async () => expect((await repo.getProjection()).kind).toBe('example'));
     const proj = await repo.getProjection();
     expect(JSON.stringify(proj)).not.toMatch(/Fictícia|Delta/);
+  });
+
+  it('mostra a data de exclusão dos dados brutos (30 dias) e lembra de baixar a exportação anônima', async () => {
+    const { repo } = makeRepo();
+    const user = userEvent.setup();
+    render(wrap(repo, <TeacherPanel />));
+    await user.click(screen.getByRole('button', { name: 'Entrar na demonstração' }));
+    await user.click(screen.getByRole('button', { name: 'Abrir sessão' }));
+    const note = await screen.findByText(/serão apagados automaticamente em/);
+    expect(note).toHaveTextContent(/30 dias/);
+    expect(note).toHaveTextContent(/exportação anônima/);
+    const session = (await repo.getCurrentSession())!;
+    expect(session.retentionUntil! - session.openedAt).toBe(30 * 86_400_000);
+    expect(note.textContent).toContain(new Date(session.retentionUntil!).toLocaleDateString('pt-BR'));
   });
 
   it('a pré-visualização oculta dados pessoais da justificativa antes de projetar', async () => {

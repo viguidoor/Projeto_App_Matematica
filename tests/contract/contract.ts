@@ -127,8 +127,8 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       const t1 = await phaseAfterReload();
       expect(t1?.phase).toBe('hipotese');
       expect(t1?.diagonals).toEqual({ major: 12, minor: 6 });
-      await device.recordHint(team.id, 1);
       await device.submitHypothesis(team.id, input('72'));
+      await device.recordHint(team.id, 1);
       const t2 = await phaseAfterReload();
       expect(t2?.phase).toBe('feedback');
       expect(t2?.hypothesis?.answer).toBe(72);
@@ -147,15 +147,15 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       const { student, team } = await start(w);
       await student.submitDiagnostic(team.id, input('40'));
       await student.saveProgress(team.id, { phase: 'hipotese' });
-      await student.recordHint(team.id, 1);
       await student.submitHypothesis(team.id, input('60'));
+      await student.recordHint(team.id, 1);
       await revise(student, team.id, '30');
       await student.saveProgress(team.id, { phase: 'saida' });
       await student.submitExit(team.id, input('24', 'm²', { calculation: '12 × 4 ÷ 2' }));
 
       const t = (await student.getTeam(team.id))!;
       expect(t.diagnostic).toMatchObject({ major: 8, minor: 5, answer: 40, correct: false, patternId: 'produto_sem_metade', hintLevel: 0 });
-      expect(t.hypothesis).toMatchObject({ major: 10, minor: 6, answer: 60, correct: false, patternId: 'produto_sem_metade', hintLevel: 1 });
+      expect(t.hypothesis).toMatchObject({ major: 10, minor: 6, answer: 60, correct: false, patternId: 'produto_sem_metade', hintLevel: 0 });
       expect(t.attempts).toHaveLength(1);
       expect(t.attempts[0]).toMatchObject({ n: 1, major: 10, minor: 6, answer: 30, correct: true, patternId: null, hintLevel: 1 });
       expect(t.exit).toMatchObject({ major: 12, minor: 4, answer: 24, correct: true, hintLevel: 0 });
@@ -200,11 +200,14 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       await rejects(student.saveProgress(team.id, { phase: 'exploracao' }), 'INVALID_STATE');
     });
 
-    it('dicas: só depois do diagnóstico, em ordem, sem repetir, e não existem na saída', async () => {
+    it('dicas: bloqueadas até a hipótese inicial; depois em ordem, sem repetir, e não existem na saída', async () => {
       const w = await makeWorld();
       const { student, team } = await start(w);
       await rejects(student.recordHint(team.id, 1), 'INVALID_STATE'); // antes do diagnóstico
       await toHypothesisForm(student, team.id);
+      await rejects(student.recordHint(team.id, 1), 'INVALID_STATE'); // exploração / formulário da hipótese
+      expect((await student.getTeam(team.id))!.hints).toEqual([]);
+      await student.submitHypothesis(team.id, input('30'));
       await rejects(student.recordHint(team.id, 2), 'INVALID_STATE'); // pulou a 1
       await rejects(student.recordHint(team.id, 4 as never), 'INVALID_INPUT');
       await student.recordHint(team.id, 1);
@@ -213,7 +216,7 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       let t = (await student.getTeam(team.id))!;
       expect(t.hints.map((h) => h.level)).toEqual([1, 2]);
       expect(deriveStatus(t)).toBe('pediu_dica');
-      await student.submitHypothesis(team.id, input('30'));
+      expect(t.hypothesis?.hintLevel).toBe(0); // a hipótese inicial foi feita sem dicas
       await student.saveProgress(team.id, { phase: 'saida' });
       await rejects(student.recordHint(team.id, 3), 'INVALID_STATE');
       await student.submitExit(team.id, input('24'));
@@ -226,7 +229,7 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       const w = await makeWorld();
       const { student, team } = await start(w);
       await toHypothesisForm(student, team.id);
-      await student.submitHypothesis(team.id, input('60')); // sem dicas
+      await student.submitHypothesis(team.id, input('60')); // sempre sem dicas
       await revise(student, team.id, '16'); // ainda sem dicas
       await student.recordHint(team.id, 1);
       await student.recordHint(team.id, 2);
@@ -265,7 +268,8 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       await rejects(student.submitDiagnostic(team.id, input('0')), 'INVALID_INPUT');
       await rejects(student.submitDiagnostic(team.id, input('20', '')), 'INVALID_INPUT');
       await rejects(student.submitDiagnostic(team.id, input('20', 'm²', { calculation: '' })), 'INVALID_INPUT');
-      await rejects(student.submitDiagnostic(team.id, input('20', 'm²', { justification: 'curta' })), 'INVALID_INPUT');
+      await rejects(student.submitDiagnostic(team.id, input('20', 'm²', { justification: '' })), 'INVALID_INPUT');
+      await rejects(student.submitDiagnostic(team.id, input('20', 'm²', { justification: ' x ' })), 'INVALID_INPUT'); // 1 caractere útil
       for (const v of vectors.dadosPessoais.filter((d) => d.pessoal)) {
         await rejects(student.submitDiagnostic(team.id, input('20', 'm²', { justification: `justificativa: ${v.text}` })), 'INVALID_INPUT');
       }
@@ -275,6 +279,24 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
         break;
       }
       expect((await student.getTeam(team.id))!.diagnostic).not.toBeNull();
+    });
+
+    it('justificativas curtas e matematicamente válidas são aceitas (mínimo de 2 caracteres); o máximo e a proteção de dados continuam', async () => {
+      const w = await makeWorld();
+      const { student, team } = await start(w);
+      await student.submitDiagnostic(team.id, input('20', 'm²', { justification: 'metade' }));
+      await student.saveProgress(team.id, { phase: 'hipotese' });
+      await student.submitHypothesis(team.id, input('30', 'm²', { justification: '÷2' }));
+      const t = (await student.getTeam(team.id))!;
+      expect(t.diagnostic?.justification).toBe('metade');
+      expect(t.hypothesis).toMatchObject({ justification: '÷2', correct: true });
+
+      await student.saveProgress(team.id, { phase: 'exploracao' });
+      await student.saveProgress(team.id, { phase: 'hipotese' });
+      await rejects(student.submitAttempt(team.id, input('30', 'm²', { justification: 'x'.repeat(501) })), 'INVALID_INPUT');
+      await rejects(student.submitAttempt(team.id, input('30', 'm²', { justification: 'fale com a@b.com' })), 'INVALID_INPUT');
+      const ok = await student.submitAttempt(team.id, input('30', 'm²', { justification: 'D×d÷2' }));
+      expect(ok.justification).toBe('D×d÷2');
     });
 
     it('é idempotente: repetir o mesmo requestId não duplica nem altera o registro', async () => {
@@ -306,10 +328,10 @@ export function defineContract(name: string, makeWorld: WorldFactory) {
       await student.saveProgress(team.id, { diagonals: { major: 12, minor: 6 } });
       expect(await status()).toBe('explorando');
       await student.saveProgress(team.id, { phase: 'hipotese' });
-      await student.recordHint(team.id, 1);
-      expect(await status()).toBe('pediu_dica');
       await student.submitHypothesis(team.id, input('36'));
       expect(await status()).toBe('tentou');
+      await student.recordHint(team.id, 1);
+      expect(await status()).toBe('pediu_dica');
       await student.saveProgress(team.id, { phase: 'saida' });
       await student.submitExit(team.id, input('24'));
       expect(await status()).toBe('concluiu');

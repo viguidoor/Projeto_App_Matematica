@@ -134,7 +134,7 @@ Restrições:
 - `submissions_answer_valid` (check): `CHECK (((answer > (0)::numeric) AND (answer <= (100000)::numeric)))`
 - `submissions_calc_len` (check): `CHECK (((char_length(calculation) >= 3) AND (char_length(calculation) <= 120)))`
 - `submissions_hint_valid` (check): `CHECK (((hint_level >= 0) AND (hint_level <= 3)))`
-- `submissions_just_len` (check): `CHECK (((char_length(justification) >= 8) AND (char_length(justification) <= 500)))`
+- `submissions_just_len` (check): `CHECK (((char_length(justification) >= 2) AND (char_length(justification) <= 500)))`
 - `submissions_kind_valid` (check): `CHECK ((kind = ANY (ARRAY['diagnostico'::text, 'hipotese'::text, 'tentativa'::text, 'saida'::text])))`
 - `submissions_ms_valid` (check): `CHECK (((ms_since_phase_start IS NULL) OR (ms_since_phase_start >= 0)))`
 - `submissions_pattern_valid` (check): `CHECK (((pattern_id IS NULL) OR (pattern_id = ANY (ARRAY['produto_sem_metade'::text, 'soma_diagonais'::text, 'media_diagonais'::text, 'quarto_do_produto'::text, 'unidade_incorreta'::text]))))`

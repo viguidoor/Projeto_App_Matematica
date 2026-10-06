@@ -199,6 +199,39 @@ describe('privilégios no catálogo do banco (sem depender da API)', () => {
   });
 });
 
+describe('ninguém é promovido a professor pelo aplicativo', () => {
+  it('nenhuma função do banco escreve na tabela teachers (só o dono do projeto, manualmente)', async () => {
+    const writers = await withDb(async (db) =>
+      (await db.query(`
+        select n.nspname || '.' || p.proname as f
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname in ('public', 'app_private') and p.prokind = 'f'
+           and p.prosrc ~* '(insert\\s+into|update|delete\\s+from|truncate)\\s+(public\\.)?teachers\\y'`)).rows.map((r) => r.f as string),
+    );
+    expect(writers).toEqual([]);
+  });
+
+  it('nem triggers nem políticas de escrita existem para teachers; só leitura da própria linha', async () => {
+    const info = await withDb(async (db) => ({
+      triggers: (await db.query(`select tgname from pg_trigger where tgrelid = 'public.teachers'::regclass and not tgisinternal`)).rows,
+      policies: (await db.query(`select policyname, cmd from pg_policies where tablename = 'teachers'`)).rows,
+    }));
+    expect(info.triggers).toEqual([]);
+    expect(info.policies).toEqual([{ policyname: 'teachers_read_own', cmd: 'SELECT' }]);
+  });
+
+  it('um professor também não consegue adicionar outro professor, nem por tabela nem por função', async () => {
+    const client = rawClient();
+    await client.auth.signInWithPassword(TEACHERS.a);
+    const { userId } = await anonymousClient();
+    expect((await client.from('teachers').insert({ user_id: userId })).error?.code).toBe('42501');
+    expect((await client.from('teachers').update({ user_id: userId }).neq('user_id', FAKE)).error?.code).toBe('42501');
+    expect((await client.from('teachers').delete().neq('user_id', FAKE)).error?.code).toBe('42501');
+    const { count } = await client.from('teachers').select('*', { count: 'exact', head: true });
+    expect(count).toBe(1); // só enxerga a própria linha
+  });
+});
+
 describe('sem login (chave pública): só a projeção por código', () => {
   it.each([...STUDENT_FUNCTIONS, ...TEACHER_FUNCTIONS])('não executa %s', async (fn, args) => {
     const { error } = await rawClient().rpc(fn, args);

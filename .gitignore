@@ -9,3 +9,9 @@ infra/local/.env
 .env.*
 !.env.example
 !infra/local/.env.example
+
+# E2E
+e2e-report
+e2e-resultados
+playwright-report
+test-results

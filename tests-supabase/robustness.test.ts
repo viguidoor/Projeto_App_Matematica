@@ -75,6 +75,7 @@ describe('idempotência e concorrência (as mesmas regras valem com abas e toque
   it('pedidos simultâneos da mesma dica registram uma só vez', async () => {
     const { device, team } = await freshTeam();
     await toHypothesisForm(device, team.id);
+    await device.submitHypothesis(team.id, sub('60', req(300))); // dicas só existem depois da hipótese inicial
     await Promise.all(Array.from({ length: 6 }, () => device.recordHint(team.id, 1)));
     expect(await count(`select count(*)::int as n from public.hint_events where team_id = $1`, [team.id])).toBe(1);
     expect((await device.getTeam(team.id))!.hints.map((h) => h.level)).toEqual([1]);
@@ -155,7 +156,7 @@ describe('queda de rede: o envio é repetido sem duplicar', () => {
     const err = await device.saveProgress(team.id, { phase: 'hipotese' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RepositoryError);
     expect((err as RepositoryError).code).toBe('NETWORK');
-    expect((err as RepositoryError).message).toMatch(/Sem conexão/);
+    expect((err as RepositoryError).message).toBe('Não foi possível conectar ao servidor. Verifique a conexão e avise o professor.');
     expect(device.connection.get()).toBe('offline');
     down = false;
     const ok = await device.saveProgress(team.id, { phase: 'hipotese' });
@@ -188,8 +189,8 @@ describe('apagar a sessão enquanto as equipes trabalham', () => {
           for (const step of [
             () => d.submitDiagnostic(id, sub('20')),
             () => d.saveProgress(id, { phase: 'hipotese' }),
-            () => d.recordHint(id, 1),
             () => d.submitHypothesis(id, sub('60')),
+            () => d.recordHint(id, 1),
           ]) out.push(await codeOf(step()));
           return out;
         }),

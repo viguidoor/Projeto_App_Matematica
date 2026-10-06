@@ -50,15 +50,15 @@ describe('separação: diagnóstico → hipótese inicial → tentativas/revisõ
     const { repo, team } = await joined();
     await repo.submitDiagnostic(team.id, input('40'));
     await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.recordHint(team.id, 1);
     await repo.submitHypothesis(team.id, input('60'));
+    await repo.recordHint(team.id, 1);
     await revise(repo, team.id, '30');
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input('24', 'm²', { calculation: '12 × 4 ÷ 2' }));
 
     const t = (await repo.getTeam(team.id))!;
     expect(t.diagnostic).toMatchObject({ major: 8, minor: 5, answer: 40, correct: false, patternId: 'produto_sem_metade', hintLevel: 0 });
-    expect(t.hypothesis).toMatchObject({ major: 10, minor: 6, answer: 60, hintLevel: 1, correct: false, patternId: 'produto_sem_metade' });
+    expect(t.hypothesis).toMatchObject({ major: 10, minor: 6, answer: 60, hintLevel: 0, correct: false, patternId: 'produto_sem_metade' });
     expect(t.attempts).toHaveLength(1);
     expect(t.attempts[0]).toMatchObject({ n: 1, major: 10, minor: 6, answer: 30, hintLevel: 1, correct: true });
     expect(t.exit).toMatchObject({ major: 12, minor: 4, answer: 24, correct: true, hintLevel: 0 });
@@ -161,10 +161,10 @@ describe('estado exibido ao professor', () => {
     await repo.saveProgress(team.id, { diagonals: { major: 12, minor: 6 } });
     expect(await st()).toBe('explorando');
     await repo.saveProgress(team.id, { phase: 'hipotese' });
-    await repo.recordHint(team.id, 1);
-    expect(await st()).toBe('pediu_dica');
     await repo.submitHypothesis(team.id, input('36'));
     expect(await st()).toBe('tentou');
+    await repo.recordHint(team.id, 1);
+    expect(await st()).toBe('pediu_dica');
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input('24'));
     expect(await st()).toBe('concluiu');

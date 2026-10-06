@@ -23,6 +23,8 @@
     ]
   },
   "include": [
+    "e2e",
+    "playwright.config.ts",
     "src",
     "tests",
     "tests-supabase",

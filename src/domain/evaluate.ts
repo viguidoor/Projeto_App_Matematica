@@ -77,7 +77,7 @@ export type SubmissionCheck =
   | { ok: true; value: { calculation: string; answer: number; unit: Unit; justification: string; rawAnswer: string } }
   | { ok: false; errors: FieldErrors };
 
-export const LIMITS = { calculationMin: 3, calculationMax: 120, justificationMin: 8, justificationMax: 500 };
+export const LIMITS = { calculationMin: 3, calculationMax: 120, justificationMin: 2, justificationMax: 500 };
 
 export function validateSubmissionInput(input: SubmissionInput): SubmissionCheck {
   const errors: FieldErrors = {};
@@ -98,7 +98,7 @@ export function validateSubmissionInput(input: SubmissionInput): SubmissionCheck
   if (input.unit !== 'm' && input.unit !== 'm²') errors.unit = 'Escolham a unidade da resposta.';
 
   if (justification.length < LIMITS.justificationMin) {
-    errors.justification = `Expliquem em uma frase como pensaram (mínimo ${LIMITS.justificationMin} caracteres).`;
+    errors.justification = 'Escrevam como pensaram. Pode ser curto, por exemplo: "metade do retângulo".';
   } else if (justification.length > LIMITS.justificationMax) {
     errors.justification = `A justificativa pode ter até ${LIMITS.justificationMax} caracteres.`;
   } else if (containsPersonalData(justification)) {

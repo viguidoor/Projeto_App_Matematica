@@ -64,8 +64,10 @@ describe('tempo real do painel do professor', () => {
     const answerLatency = Date.now() - t1;
     expect((await teacherA.listTeams(s.code))[0].diagnostic?.answer).toBe(20);
 
+    await device.saveProgress(team.id, { phase: 'hipotese' });
+    await device.submitHypothesis(team.id, { ...sub('60'), calculation: '10 x 6' });
     const beforeHint = calls;
-    await device.recordHint(team.id, 1);
+    await device.recordHint(team.id, 1); // dicas só depois da hipótese inicial
     expect(await until(() => calls > beforeHint, 5_000)).toBe(true);
     console.log(`[tempo real] latência até o painel ser avisado: entrada ${joinLatency} ms, resposta ${answerLatency} ms (inclui o envio)`);
     off();

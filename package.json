@@ -15,9 +15,10 @@
     "db:down": "./infra/local/stack.sh down",
     "db:reset": "node infra/local/migrate.mjs --reset",
     "test:supabase": "./infra/local/stack.sh limit 1000 && vitest run --config vitest.supabase.config.ts",
-    "test:all": "vitest run && npm run test:supabase && npm run test:supabase:limite-padrao",
+    "test:all": "vitest run && npm run test:supabase && npm run test:supabase:limite-padrao && npm run test:e2e",
     "check:secrets": "node scripts/verificar-segredos.mjs",
-    "test:supabase:limite-padrao": "./infra/local/stack.sh limit 30 && vitest run --config vitest.supabase.config.ts tests-supabase/join35.test.ts"
+    "test:supabase:limite-padrao": "./infra/local/stack.sh limit 30 && vitest run --config vitest.supabase.config.ts tests-supabase/join35.test.ts",
+    "test:e2e": "./infra/local/stack.sh limit 1000 && playwright test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
@@ -25,6 +26,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

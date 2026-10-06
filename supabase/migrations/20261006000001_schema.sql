@@ -80,7 +80,7 @@ create table public.submissions (
   constraint submissions_answer_valid check (answer > 0 and answer <= 100000),
   constraint submissions_calc_len check (char_length(calculation) between 3 and 120),
   constraint submissions_raw_len check (char_length(raw_answer) between 1 and 20),
-  constraint submissions_just_len check (char_length(justification) between 8 and 500),
+  constraint submissions_just_len check (char_length(justification) between 2 and 500),
   constraint submissions_hint_valid check (hint_level between 0 and 3),
   constraint submissions_ms_valid check (ms_since_phase_start is null or ms_since_phase_start >= 0),
   constraint submissions_pattern_valid check (

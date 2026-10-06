@@ -110,7 +110,17 @@ export function Explore({ team, onTeam }: ScreenProps) {
           <p className="field-error" role="alert">{error}</p>
         </div>
       </div>
-      <HintArea team={team} onTeam={onTeam} />
+      {isRevision ? <HintArea team={team} onTeam={onTeam} /> : <HintsLocked />}
+    </section>
+  );
+}
+
+/** Antes da hipótese inicial não há dicas: a primeira proposta da equipe é sempre feita sem apoio. */
+function HintsLocked() {
+  return (
+    <section className="hints" aria-labelledby="hints-locked-title">
+      <h3 id="hints-locked-title">Dicas</h3>
+      <p className="help">As dicas ficam disponíveis depois que a equipe registrar a hipótese inicial. Primeiro explorem e proponham a resposta do jeito que a equipe entende.</p>
     </section>
   );
 }
@@ -133,6 +143,7 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
   const { major, minor } = team.diagonals;
   const isRevision = team.hypothesis !== null;
   const n = team.attempts.length + 1;
+  const [backError, setBackError] = useState('');
   return (
     <section>
       <ScreenHeading>{isRevision ? `Tentativa ${n} da equipe` : 'Hipótese inicial da equipe'}</ScreenHeading>
@@ -152,12 +163,25 @@ export function Hypothesis({ team, onTeam }: ScreenProps) {
               await refresh();
             }}
           />
-          <button type="button" className="btn btn-link" onClick={async () => { await repo.saveProgress(team.id, { phase: 'exploracao' }); await refresh(); }}>
+          <button
+            type="button"
+            className="btn btn-link"
+            onClick={async () => {
+              setBackError('');
+              try {
+                await repo.saveProgress(team.id, { phase: 'exploracao' });
+                await refresh();
+              } catch (e) {
+                setBackError(e instanceof RepositoryError ? e.message : 'Não foi possível voltar. Tentem de novo.');
+              }
+            }}
+          >
             Voltar e ajustar as medidas
           </button>
+          <p className="field-error" role="alert">{backError}</p>
         </div>
       </div>
-      <HintArea team={team} onTeam={onTeam} />
+      {isRevision ? <HintArea team={team} onTeam={onTeam} /> : <HintsLocked />}
     </section>
   );
 }
@@ -170,9 +194,15 @@ export function Feedback({ team, onTeam }: ScreenProps) {
   const title = team.attempts.length === 0 ? 'Devolutiva da hipótese inicial' : `Devolutiva da tentativa ${team.attempts.length}`;
   const level = maxHintLevel(team);
 
+  const [error, setError] = useState('');
   const go = async (phase: 'exploracao' | 'saida') => {
-    await repo.saveProgress(team.id, { phase });
-    await refresh();
+    setError('');
+    try {
+      await repo.saveProgress(team.id, { phase });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof RepositoryError ? e.message : 'Não foi possível continuar. Tentem de novo.');
+    }
   };
 
   return (
@@ -206,6 +236,7 @@ export function Feedback({ team, onTeam }: ScreenProps) {
               <button type="button" className="btn btn-link" onClick={() => setConfirming(true)}>Ir ao problema final</button>
             )}
           </div>
+          <p className="field-error" role="alert">{error}</p>
           {confirming && !last.correct && (
             <div className="confirm" role="alertdialog" aria-label="Confirmar ida ao problema final">
               <p>No problema final não há dicas e não é possível voltar. Querem continuar?</p>

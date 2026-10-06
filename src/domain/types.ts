@@ -94,6 +94,8 @@ export interface Session {
   openedAt: number;
   expiresAt: number;
   closedAt: number | null;
+  /** Quando os dados brutos desta sessão serão apagados automaticamente (30 dias depois de abrir). */
+  retentionUntil?: number;
 }
 
 export interface TeacherNote {

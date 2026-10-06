@@ -20,15 +20,20 @@ describe('conteúdo das dicas', () => {
   });
 });
 
-describe('fluxo das dicas', () => {
-  it('só ficam disponíveis depois do diagnóstico', async () => {
+describe('fluxo das dicas: bloqueadas até o envio da hipótese inicial', () => {
+  it('não existem antes da hipótese inicial: nem antes do diagnóstico, nem durante a exploração, nem no formulário da hipótese', async () => {
     const { repo, team } = await joined();
     await expect(repo.recordHint(team.id, 1)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await repo.submitDiagnostic(team.id, input('20'));
+    await expect(repo.recordHint(team.id, 1)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await repo.saveProgress(team.id, { phase: 'hipotese' });
+    await expect(repo.recordHint(team.id, 1)).rejects.toThrow(/depois que a equipe registrar a hipótese inicial/);
+    expect((await repo.getTeam(team.id))!.hints).toEqual([]);
   });
 
-  it('são liberadas em ordem e registradas uma única vez', async () => {
+  it('depois da hipótese inicial são liberadas em ordem e registradas uma única vez', async () => {
     const { repo, team } = await joined();
-    await toHypothesis(repo, team.id);
+    await withHypothesis(repo, team.id, '60');
     await expect(repo.recordHint(team.id, 2)).rejects.toBeInstanceOf(RepositoryError);
     await repo.recordHint(team.id, 1);
     await repo.recordHint(team.id, 1); // repetida: sem duplicar
@@ -39,26 +44,26 @@ describe('fluxo das dicas', () => {
     await expect(repo.recordHint(team.id, 4 as never)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
 
-  it('hipótese inicial e tentativas registram o nível de dica disponível naquele momento', async () => {
+  it('a hipótese inicial é SEMPRE sem dicas; as tentativas guardam o nível visto naquele momento', async () => {
     const { repo, team } = await joined();
-    await withHypothesis(repo, team.id, '60'); // hipótese inicial sem dicas
+    await withHypothesis(repo, team.id, '60');
+    await revise(repo, team.id, '16'); // revisão antes de pedir dicas
     await repo.recordHint(team.id, 1);
     await repo.recordHint(team.id, 2);
     await revise(repo, team.id, '30');
     const t = (await repo.getTeam(team.id))!;
     expect(t.hypothesis).toMatchObject({ answer: 60, hintLevel: 0, correct: false });
-    expect(t.attempts.map((a) => a.hintLevel)).toEqual([2]);
-    expect(t.attempts.map((a) => a.correct)).toEqual([true]);
+    expect(t.attempts.map((a) => [a.answer, a.hintLevel])).toEqual([[16, 0], [30, 2]]);
     expect(t.diagnostic?.hintLevel).toBe(0);
   });
 
-  it('o status passa a "pediu dica" e depois "tentou"', async () => {
+  it('o status passa a "tentou" com a hipótese e a "pediu dica" depois da dica', async () => {
     const { repo, team } = await joined();
     await toHypothesis(repo, team.id);
+    await repo.submitHypothesis(team.id, input('60'));
+    expect(deriveStatus((await repo.getTeam(team.id))!)).toBe('tentou');
     await repo.recordHint(team.id, 1);
     expect(deriveStatus((await repo.getTeam(team.id))!)).toBe('pediu_dica');
-    await repo.submitHypothesis(team.id, input('30'));
-    expect(deriveStatus((await repo.getTeam(team.id))!)).toBe('tentou');
   });
 
   it('não existem dicas no problema final e a saída não registra dica', async () => {

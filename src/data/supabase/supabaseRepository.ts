@@ -58,7 +58,7 @@ interface RpcResult {
 
 const RATE_LIMIT_MESSAGE =
   'Muitas equipes entraram ao mesmo tempo pela mesma rede. Aguardem alguns minutos e tentem de novo, ou chamem o professor.';
-const NETWORK_MESSAGE = 'Sem conexão com o servidor. Verifiquem o Wi-Fi e tentem de novo; o envio será repetido sem duplicar.';
+const NETWORK_MESSAGE = 'Não foi possível conectar ao servidor. Verifique a conexão e avise o professor.';
 
 function isTransient(result: RpcResult): boolean {
   if (!result.error) return false;
@@ -402,6 +402,11 @@ export class SupabaseRepository implements SessionRepository {
     for (const table of ['teams', 'submissions', 'hint_events', 'interventions', 'projection', 'sessions']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => this.notify());
     }
+    // O canal fica "assinado" ANTES de a assinatura do banco estar pronta (alguns segundos). Eventos dessa janela
+    // não chegam pelo tempo real: por isso recarregamos quando o servidor confirma a assinatura do banco.
+    channel.on('system', {}, (payload: { extension?: string; status?: string }) => {
+      if (this.realtime === channel && payload?.extension === 'postgres_changes' && payload?.status === 'ok') this.notify();
+    });
     channel.subscribe((status) => {
       if (this.realtime !== channel) return; // canal antigo, já substituído
       if (status === 'SUBSCRIBED') {
@@ -409,6 +414,7 @@ export class SupabaseRepository implements SessionRepository {
         this.rejoinAttempts = 0;
         this.setConn('connected');
         this.notify(); // recarrega: pode ter perdido eventos enquanto reconectava
+        setTimeout(() => this.realtime === channel && this.notify(), 4_000); // recarga de segurança da janela acima
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         if (this.realtimeHealthy || this.unhealthySince === 0) this.unhealthySince = Date.now();
         this.realtimeHealthy = false;

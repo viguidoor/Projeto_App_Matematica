@@ -14,8 +14,8 @@ async function classroom() {
   for (const s of specs) {
     const team = await repo.joinSession(code, s.alias);
     await toHypothesis(repo, team.id, s.diag);
-    for (let l = 1; l <= s.hints; l += 1) await repo.recordHint(team.id, l as 1 | 2);
     await repo.submitHypothesis(team.id, input(s.hyp));
+    for (let l = 1; l <= s.hints; l += 1) await repo.recordHint(team.id, l as 1 | 2); // dicas só depois da hipótese inicial
     if (s.revision) await revise(repo, team.id, s.revision);
     await repo.saveProgress(team.id, { phase: 'saida' });
     await repo.submitExit(team.id, input(s.exit));

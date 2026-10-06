@@ -79,8 +79,8 @@ describe('exportação pedagógica anônima: o SQL e o aplicativo geram os mesmo
       await d.submitDiagnostic(team.id, sub(e.diag, { calculation: '8 x 5 : 2' }));
       if (!e.hyp) continue;
       await d.saveProgress(team.id, { phase: 'hipotese' });
-      for (let l = 1; l <= (e.hints ?? 0); l += 1) await d.recordHint(team.id, l as 1 | 2);
       await d.submitHypothesis(team.id, sub(e.hyp));
+      for (let l = 1; l <= (e.hints ?? 0); l += 1) await d.recordHint(team.id, l as 1 | 2); // só depois da hipótese inicial
       for (const r of e.revisions ?? []) {
         await d.saveProgress(team.id, { phase: 'exploracao' });
         await d.saveProgress(team.id, { phase: 'hipotese' });
@@ -127,6 +127,12 @@ describe('exportação pedagógica anônima: o SQL e o aplicativo geram os mesmo
 });
 
 describe('retenção de 30 dias dos dados brutos', () => {
+  it('a sessão devolve a data de exclusão (30 dias) para o painel avisar o professor', async () => {
+    const s = await teacher.openSession();
+    expect(s.retentionUntil! - s.openedAt).toBeGreaterThan(29.99 * 86_400_000);
+    expect(s.retentionUntil! - s.openedAt).toBeLessThan(30.01 * 86_400_000);
+  });
+
   it('a sessão nasce com retenção de 30 dias', async () => {
     const s = await teacher.openSession();
     const row = await withDb(async (db) =>
@@ -199,8 +205,8 @@ describe('visões de análise e linha do tempo (tempo aproximado)', () => {
     await d.submitDiagnostic(team.id, sub('20', { calculation: '8 x 5 : 2' }));
     await sleep(600);
     await d.saveProgress(team.id, { phase: 'hipotese' });
-    await d.recordHint(team.id, 1);
     await d.submitHypothesis(team.id, sub('60'));
+    await d.recordHint(team.id, 1);
     await d.saveProgress(team.id, { phase: 'exploracao' });
     await d.saveProgress(team.id, { phase: 'hipotese' });
     await d.submitAttempt(team.id, sub('30'));
@@ -217,7 +223,7 @@ describe('visões de análise e linha do tempo (tempo aproximado)', () => {
       diagnostico_correto: true,
       hipotese_correta: false,
       hipotese_padrao: 'produto_sem_metade',
-      hipotese_dica: 1,
+      hipotese_dica: 0, // a hipótese inicial é sempre sem dicas
       revisoes: 1,
       acertou_em_revisao: true,
       dica_maxima: 1,

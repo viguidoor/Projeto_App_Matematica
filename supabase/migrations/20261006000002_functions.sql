@@ -142,8 +142,8 @@ begin
   end if;
 
   justification := btrim(coalesce(p_justification, ''));
-  if char_length(justification) < 8 then
-    perform app_private.fail('INVALID_INPUT', 'Expliquem em uma frase como pensaram (mínimo 8 caracteres).');
+  if char_length(justification) < 2 then
+    perform app_private.fail('INVALID_INPUT', 'Escrevam como pensaram. Pode ser curto, por exemplo: "metade do retângulo".');
   elsif char_length(justification) > 500 then
     perform app_private.fail('INVALID_INPUT', 'A justificativa pode ter até 500 caracteres.');
   elsif app_private.contains_personal_data(justification) then
@@ -185,7 +185,8 @@ as $$
     'code', s.code,
     'openedAt', app_private.ms(s.created_at),
     'expiresAt', app_private.ms(s.expires_at),
-    'closedAt', app_private.ms(s.closed_at)
+    'closedAt', app_private.ms(s.closed_at),
+    'retentionUntil', app_private.ms(s.retention_until)
   )
 $$;
 
@@ -451,8 +452,9 @@ declare
   v_current smallint;
 begin
   perform app_private.assert_active(v_team);
-  if not exists (select 1 from public.submissions s where s.team_id = v_team.id and s.kind = 'diagnostico') then
-    perform app_private.fail('INVALID_STATE', 'As dicas só ficam disponíveis depois do diagnóstico.');
+  -- Dicas ficam bloqueadas até o envio da hipótese inicial (a hipótese é sempre feita sem dicas).
+  if not exists (select 1 from public.submissions s where s.team_id = v_team.id and s.kind = 'hipotese') then
+    perform app_private.fail('INVALID_STATE', 'As dicas ficam disponíveis depois que a equipe registrar a hipótese inicial.');
   end if;
   if v_team.phase in ('saida', 'concluido') then
     perform app_private.fail('INVALID_STATE', 'O problema final é resolvido sem dicas.');
